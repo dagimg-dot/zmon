@@ -202,7 +202,10 @@ pub const State = struct {
 
     pub fn view(s: *State, c: *ui.Context) void {
         const dark = s.dark orelse nanoui.isDark();
-        c.theme = theme.theme(dark);
+        // The window takes its font from the theme the view *chose*, not from `c.theme`.
+        const chosen = theme.theme(dark);
+        c.theme = chosen;
+        c.theme_chosen = chosen;
         const k = theme.colors(dark);
         c.frameIn(s.tick(c.time));
 

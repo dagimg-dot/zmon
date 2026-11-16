@@ -3,6 +3,7 @@ const std = @import("std");
 const nanoui = @import("nanoui");
 const app_view = @import("app.zig");
 const fonts = @import("fonts.zig");
+const theme = @import("theme.zig");
 
 pub const panic = nanoui.panic;
 pub const std_options = nanoui.std_options;
@@ -18,6 +19,7 @@ pub fn main(init: nanoui.Init) void {
         .title = "zmon",
         .width = 1180,
         .height = 760,
+        .theme = theme.theme(nanoui.isDark()),
         .content = .{ .view = .init(&state, app_view.State.view) },
     }) catch return;
     app.run() catch return;

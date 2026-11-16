@@ -1,6 +1,7 @@
 //! zmon is monochrome: neutral surfaces, hairline separators, and ink that
 //! flips with the system's light or dark setting. Emphasis comes from weight
 //! and contrast, not from hue.
+const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const Color = ui.Color;
@@ -65,4 +66,9 @@ pub fn theme(dark: bool) ui.Theme {
     t.font = fonts.family;
     t.mono_font = fonts.family;
     return t;
+}
+
+test "both themes carry the bundled font, so the window draws in it" {
+    try std.testing.expectEqualStrings(fonts.family, theme(true).font.?);
+    try std.testing.expectEqualStrings(fonts.family, theme(false).font.?);
 }
