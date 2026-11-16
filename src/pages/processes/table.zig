@@ -36,6 +36,11 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
         }
     }
     rows.end();
+    if (s.pending_toggle) |root| {
+        s.pending_toggle = null;
+        s.toggle(root);
+        c.changed = true;
+    }
 }
 
 fn header(c: *ui.Context, s: *State, k: theme.Colors) void {
@@ -84,7 +89,7 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
         if (g.kind != .kernel) s.selected = g.root;
         c.changed = true;
     }
-    if (it.double_clicked and g.members.len > 1) s.toggle(g.root);
+    if (it.double_clicked and g.members.len > 1) s.pending_toggle = g.root;
     const ink = if (sel) k.selected_text else k.text;
     const faint = if (sel) k.selected_text.alpha(0.7) else k.secondary;
     {
@@ -94,7 +99,7 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
             ui.key(c, "chev");
             const chev = ui.div(c).row().size(18, 18).itemsCenter().justifyCenter().rounded(4).control();
             defer chev.end();
-            if (chev.clicked()) s.toggle(g.root);
+            if (chev.clicked()) s.pending_toggle = g.root;
             ui.icon(c, if (open) "chevron.down" else "chevron.right", .{ .size = 9, .frame = 14, .weight = .bold, .color = faint });
         } else {
             _ = c.leaf(.{ .width = .{ .px = 18 }, .height = .{ .px = 18 } }, .none, null);

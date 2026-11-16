@@ -63,3 +63,28 @@ test "clicking a column header sorts, and again reverses" {
     t.settle(0.2);
     try std.testing.expect(state.ascending);
 }
+
+test "collapsing a group at the end of the list does not read past the rows" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    // Scroll to the end, where Kernel threads is the last row, whichever sign the wheel uses.
+    var r = t.findText("Kernel threads");
+    for ([_]f32{ 100_000, -200_000 }) |dy| {
+        if (r != null) break;
+        t.scroll(700, 500, dy);
+        t.settle(0.3);
+        r = t.findText("Kernel threads");
+    }
+    const at = r orelse return error.SkipZigTest;
+    t.doubleClick(at.x + at.w / 2, at.y + at.h / 2); // open it: its threads follow below
+    t.settle(0.3);
+    try std.testing.expect(state.expanded.contains(0));
+    const again = t.findText("Kernel threads") orelse return error.SkipZigTest;
+    t.doubleClick(again.x + again.w / 2, again.y + again.h / 2); // close it: far fewer rows
+    t.settle(0.3);
+    try std.testing.expect(!state.expanded.contains(0));
+}

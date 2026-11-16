@@ -37,6 +37,9 @@ pub const State = struct {
     /// The pid of the selected group's root or process (0: none).
     selected: i32 = 0,
     expanded: std.AutoHashMapUnmanaged(i32, void) = .empty,
+    /// A group opened or closed while the list was being drawn: the rows are
+    /// rebuilt only after the list is done with them.
+    pending_toggle: ?i32 = null,
     confirm: bool = false,
     toaster: kit.Toaster,
     next_sample: f64 = 0,
