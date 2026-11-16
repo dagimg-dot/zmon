@@ -1,4 +1,4 @@
-//! The large chart and the figures of the resource picked in the rail.
+//! The large chart and the figures of the device the sidebar opened.
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
@@ -12,12 +12,14 @@ const stats = @import("stats.zig");
 const State = app.State;
 
 pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const col = ui.div(c).column().grow().w(0).hFull().p(24).gap(18).scrollY();
+    const col = ui.div(c).column().wFull().grow().h(0).p(24).gap(18).scrollY();
     defer col.end();
     const h = &s.sampler.history;
-    switch (s.resource) {
+    switch (s.page) {
+        .processes => {},
         .cpu => {
-            heading(c, k, "CPU", c.print("{d} cores", .{s.sampler.cores.len}));
+            const machine = s.sampler.machine();
+            heading(c, k, "CPU", if (machine.len > 0) machine else c.print("{d} cores", .{s.sampler.cores.len}));
             charts.area(c, &h.cpu, .{ .height = 220, .max = 100, .color = k.text, .grid = k.separator });
             stats.cpu(c, s, k);
         },

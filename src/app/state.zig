@@ -8,9 +8,9 @@ const core = @import("zmon-core");
 const system = @import("zmon-system");
 const apps = system.apps;
 
-pub const Page = enum { processes, performance };
+/// The page shown: the process list, or one device's page.
+pub const Page = enum { processes, cpu, memory, disk, network };
 pub const Sort = enum { name, cpu, memory, disk };
-pub const Resource = enum { cpu, memory, disk, network };
 
 /// What one line of the process list shows.
 pub const Row = union(enum) {
@@ -32,7 +32,6 @@ pub const State = struct {
     page: Page = .processes,
     sort: Sort = .cpu,
     ascending: bool = false,
-    resource: Resource = .cpu,
     /// The pid of the selected group's root or process (0: none).
     selected: i32 = 0,
     expanded: std.AutoHashMapUnmanaged(i32, void) = .empty,

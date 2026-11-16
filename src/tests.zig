@@ -30,21 +30,21 @@ test "Processes lists the machine's apps and background processes" {
     try std.testing.expect(state.rows.len > state.groups.len); // sections add rows
 }
 
-test "Performance page opens from the sidebar and shows the resources" {
+test "a device tile in the sidebar opens that device's page" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
-    try t.clickText("Performance");
+    try std.testing.expect(t.hasText("Devices"));
+    try t.clickText("Memory"); // the sidebar is drawn first, so its tile is the first "Memory"
     t.settle(0.2);
-    try std.testing.expectEqual(app_state.Page.performance, state.page);
-    try std.testing.expect(t.hasText("Memory"));
-    try t.clickText("Memory");
-    t.settle(0.2);
-    try std.testing.expectEqual(app_state.Resource.memory, state.resource);
+    try std.testing.expectEqual(app_state.Page.memory, state.page);
     try std.testing.expect(t.hasText("In use"));
+    try t.clickText("Processes");
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
 }
 
 test "clicking a column header sorts, and again reverses" {
@@ -55,13 +55,13 @@ test "clicking a column header sorts, and again reverses" {
     try tester(&t, &state);
     defer t.deinit();
     try std.testing.expectEqual(app_state.Sort.cpu, state.sort);
-    try t.clickText("Memory");
+    try t.clickText("Name"); // the sidebar also says Memory and CPU, so sort by the one header it doesn't
     t.settle(0.2);
-    try std.testing.expectEqual(app_state.Sort.memory, state.sort);
-    try std.testing.expect(!state.ascending);
-    try t.clickText("Memory");
-    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Sort.name, state.sort);
     try std.testing.expect(state.ascending);
+    try t.clickText("Name");
+    t.settle(0.2);
+    try std.testing.expect(!state.ascending);
 }
 
 test "collapsing a group at the end of the list does not read past the rows" {
