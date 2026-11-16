@@ -42,6 +42,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     while (rows.next()) |i| switch (s.app_rows[i]) {
         .group => |g| groupRow(c, s, k, &columns, s.groups[g], i),
         .proc => |p| procRow(c, s, k, &columns, s.sample.procs[p], i),
+        .background => |n| backgroundRow(c, s, k, n, i),
     };
     rows.end();
     if (s.pending_toggle) |root| {
@@ -97,10 +98,33 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns,
             _ = c.leaf(.{ .width = .{ .px = 24 }, .height = .{ .px = 24 } }, .none, null);
         }
         app_icon.draw(c, &s.icons, k, g);
-        ui.text(c, g.name, .{ .size = 13.5, .weight = .semibold, .color = ink.text });
+        ui.text(c, g.name, .{ .size = 13.5, .weight = if (g.kind == .app) .semibold else .regular, .color = ink.text });
         if (g.members.len > 1) ui.text(c, c.print("({d})", .{g.members.len}), .{ .size = 12, .color = ink.faint });
     }
     table.metrics(c, columns[1..], ink, m);
+}
+
+/// The heading over everything that isn't an app: services, containers,
+/// what the session runs. Closed at first; opens like an app.
+fn backgroundRow(c: *ui.Context, s: *State, k: theme.Colors, count: u32, i: usize) void {
+    ui.key(c, "background-heading");
+    const sel = s.selected_app == app.heading;
+    const open = s.background_open or std.mem.trim(u8, s.search.text(), " ").len > 0;
+    const r = table.row(c, k, i, sel);
+    defer r.end();
+    if (r.interaction().clicked) {
+        s.selected_app = app.heading;
+        s.showBackground(!s.background_open);
+        c.focus = s.list_id;
+        c.changed = true;
+    }
+    ui.access.describe(c, r.index, .{ .role = .row, .label = c.print("Background, {d} groups, {s}", .{ count, if (open) "open" else "closed" }), .selected = sel });
+    const ink = table.ink(k, sel);
+    const name = ui.div(c).row().grow().w(0).h(table.row_h).itemsCenter().gap(6).px(6);
+    defer name.end();
+    ui.icon(c, if (open) "chevron.down" else "chevron.right", .{ .size = 9, .frame = 24, .weight = .bold, .color = ink.faint });
+    ui.text(c, "Background", .{ .size = 12.5, .weight = .semibold, .color = ink.faint });
+    ui.text(c, c.print("{d}", .{count}), .{ .size = 12, .color = ink.faint });
 }
 
 fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, p: core.Proc, i: usize) void {

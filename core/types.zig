@@ -18,6 +18,10 @@ pub const Proc = struct {
     /// word of its command line when the executable can't be read. Tells
     /// apart processes whose names say nothing ("MainThread" is node).
     program: []const u8 = "",
+    /// The systemd unit it runs in, the last part of its control group
+    /// ("app-com.anthropic.Claude-1926.scope", "docker.service"); "" when
+    /// there is none. It says which app or service a process belongs to.
+    unit: []const u8 = "",
     state: u8 = '?',
     /// Scheduling priority, -20 (most favoured) to 19.
     nice: i8 = 0,

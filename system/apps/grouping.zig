@@ -2,11 +2,18 @@
 //! (Firefox and every helper it started), background services, and the
 //! kernel's own threads.
 //!
-//! Without asking a compositor which processes own windows, an "app" is a
-//! process that a launcher entry (.desktop file) names; what it starts is
-//! grouped under it. Session scaffolding (init, the compositor, the display
-//! manager) never swallows the apps it launched, so each app stays its own
-//! group.
+//! A process's systemd unit says first which app or service it belongs to:
+//! desktops start each app in a scope of its own ("app-com.anthropic.Claude-
+//! 1926.scope"), which every helper it starts stays in, however it was
+//! started (a Flatpak's bwrap, an Electron wrapper script). The app's id in
+//! the unit's name finds its launcher entry. A service's unit makes a
+//! background group named after it.
+//!
+//! Processes in a unit that holds a whole session (a login session, the
+//! user's service manager) or in none fall back to the process tree: an app
+//! is a process that a launcher entry names, and what it starts is grouped
+//! under it. Session scaffolding (init, the compositor, the display manager)
+//! never swallows the apps it launched.
 const std = @import("std");
 const core = @import("zmon-core");
 const Proc = core.Proc;
@@ -42,6 +49,78 @@ fn scaffolding(p: *const Proc) bool {
     return false;
 }
 
+/// What a unit says about the processes in it.
+pub const Unit = union(enum) {
+    /// No unit, or one that holds a whole session: group by the process tree.
+    none,
+    /// An app the desktop started, by its id ("com.anthropic.Claude"): look
+    /// it up among the launcher entries.
+    app: []const u8,
+    /// A service or other scope, by its name ("docker", "pipewire").
+    service: []const u8,
+};
+
+/// Reads a unit's name the way systemd's desktop conventions write it:
+/// "app-<launcher>-<id>-<random>.scope", "app-<launcher>-<id>@<random>.service",
+/// and D-Bus activation's "dbus-:1.1-<id>@0.service".
+pub fn classify(unit: []const u8) Unit {
+    const stem = std.mem.cutSuffix(u8, unit, ".scope") orelse std.mem.cutSuffix(u8, unit, ".service") orelse return .none;
+    if (std.mem.eql(u8, unit, "init.scope") or std.mem.startsWith(u8, unit, "session-") or std.mem.startsWith(u8, unit, "user@")) return .none;
+    if (std.mem.cutPrefix(u8, stem, "app-")) |rest| return .{ .app = appId(rest) };
+    if (std.mem.cutPrefix(u8, stem, "dbus-")) |rest| {
+        // "dbus-:1.1-org.telegram.desktop@0": the bus name, then the id.
+        if (std.mem.indexOfScalar(u8, rest, '-')) |dash| return .{ .app = appId(rest[dash + 1 ..]) };
+    }
+    var name = if (std.mem.indexOfScalar(u8, stem, '@')) |at| stem[0..at] else stem;
+    // "tmux-spawn-<uuid>": one unit per run, all one kind of thing.
+    if (name.len > 37 and name[name.len - 37] == '-' and isUuid(name[name.len - 36 ..])) name = name[0 .. name.len - 37];
+    return if (name.len > 0) .{ .service = name } else .none;
+}
+
+fn isUuid(s: []const u8) bool {
+    if (s.len != 36) return false;
+    for (s, 0..) |ch, i| {
+        if (i == 8 or i == 13 or i == 18 or i == 23) {
+            if (ch != '-') return false;
+        } else if (!std.ascii.isHex(ch)) return false;
+    }
+    return true;
+}
+
+/// The id in an app unit's name, once its launcher and random suffix are off.
+fn appId(rest: []const u8) []const u8 {
+    var s = rest;
+    if (std.mem.indexOfScalar(u8, s, '@')) |at| s = s[0..at];
+    // A trailing "-<number>" (or hex) makes the name unique; it isn't the id.
+    if (std.mem.lastIndexOfScalar(u8, s, '-')) |dash| {
+        const tail = s[dash + 1 ..];
+        if (tail.len > 0 and allHex(tail)) s = s[0..dash];
+    }
+    // "niri-ghostty": a launcher's name before the id. Ids with dots
+    // ("com.anthropic.Claude") never start with one; ids escape their own
+    // dashes, so a dash left here separates the launcher.
+    if (std.mem.indexOfScalar(u8, s, '-')) |dash| {
+        if (std.mem.indexOfScalar(u8, s[0..dash], '.') == null) s = s[dash + 1 ..];
+    }
+    return s;
+}
+
+fn allHex(s: []const u8) bool {
+    for (s) |ch| if (!std.ascii.isHex(ch)) return false;
+    return true;
+}
+
+/// A service's name as a person reads it: a container's scope by its kind
+/// and short id, any other by its name.
+fn serviceName(a: std.mem.Allocator, name: []const u8) []const u8 {
+    for ([_][2][]const u8{ .{ "docker-", "Docker container" }, .{ "libpod-", "Podman container" } }) |kind| {
+        if (std.mem.cutPrefix(u8, name, kind[0])) |id| if (id.len >= 12 and allHex(id)) {
+            return std.fmt.allocPrint(a, "{s} {s}", .{ kind[1], id[0..12] }) catch name;
+        };
+    }
+    return name;
+}
+
 /// Builds the groups for one sample: apps first (busiest first), then
 /// background processes, then the kernel's threads. Everything is allocated
 /// from `a`.
@@ -50,44 +129,87 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
     try at.ensureTotalCapacity(a, @intCast(procs.len));
     for (procs, 0..) |p, i| at.putAssumeCapacity(p.pid, @intCast(i));
 
-    // Each process belongs to the group of its highest ancestor that is not
-    // behind scaffolding.
-    const root_of = try a.alloc(u32, procs.len);
+    const none = std.math.maxInt(u32);
+    // A unit the compositor or init runs in holds the whole session, not one
+    // app: what it started is grouped by the process tree instead.
+    var broad = std.StringHashMapUnmanaged(void).empty;
+    for (procs) |*p| if (scaffolding(p) and p.unit.len > 0) try broad.put(a, p.unit, {});
+
+    // A process in an app's or a service's unit belongs to its unit's group,
+    // keyed by the first of its processes met. Units of one kind with
+    // different runs ("tmux-spawn-<uuid>") share a group.
+    const group_of = try a.alloc(u32, procs.len);
+    const by_unit_mode = try a.alloc(bool, procs.len);
+    var by_unit = std.StringHashMapUnmanaged(u32).empty;
     for (procs, 0..) |p, i| {
+        by_unit_mode[i] = false;
+        group_of[i] = none;
+        if (p.kthread or broad.contains(p.unit)) continue;
+        const key = switch (classify(p.unit)) {
+            .none => continue,
+            .app => p.unit,
+            .service => |name| name,
+        };
+        const slot = try by_unit.getOrPut(a, key);
+        if (!slot.found_existing) slot.value_ptr.* = @intCast(i);
+        group_of[i] = slot.value_ptr.*;
+        by_unit_mode[i] = true;
+    }
+    // The rest by the process tree: the highest ancestor not behind
+    // scaffolding, or the app or service an ancestor belongs to by its unit
+    // (a browser's helpers started before it was moved into its own scope).
+    for (procs, 0..) |p, i| {
+        if (p.kthread or by_unit_mode[i]) continue;
         var cur: u32 = @intCast(i);
         var hops: u32 = 0;
-        while (hops < 64) : (hops += 1) {
-            const parent = at.get(procs[cur].ppid) orelse break;
-            if (procs[parent].kthread or scaffolding(&procs[parent])) break;
+        group_of[i] = while (hops < 64) : (hops += 1) {
+            const parent = at.get(procs[cur].ppid) orelse break cur;
+            if (procs[parent].kthread or scaffolding(&procs[parent])) break cur;
+            if (by_unit_mode[parent]) break group_of[parent];
             cur = parent;
-        }
-        root_of[i] = if (p.kthread) std.math.maxInt(u32) else cur;
+        } else cur;
     }
 
-    var by_root = std.AutoArrayHashMapUnmanaged(u32, std.ArrayList(u32)).empty;
+    var by_key = std.AutoArrayHashMapUnmanaged(u32, std.ArrayList(u32)).empty;
     var kernel: std.ArrayList(u32) = .empty;
     for (procs, 0..) |_, i| {
-        if (root_of[i] == std.math.maxInt(u32)) {
+        if (group_of[i] == none) {
             try kernel.append(a, @intCast(i));
             continue;
         }
-        const slot = try by_root.getOrPut(a, root_of[i]);
+        const slot = try by_key.getOrPut(a, group_of[i]);
         if (!slot.found_existing) slot.value_ptr.* = .empty;
         try slot.value_ptr.append(a, @intCast(i));
     }
 
     var groups: std.ArrayList(Group) = .empty;
-    var it = by_root.iterator();
+    var it = by_key.iterator();
     while (it.next()) |kv| {
-        const root = &procs[kv.key_ptr.*];
-        // The root leads its group.
         const members = kv.value_ptr.items;
-        if (std.mem.indexOfScalar(u32, members, kv.key_ptr.*)) |pos| std.mem.swap(u32, &members[0], &members[pos]);
-        const entry = index.lookup(std.fs.path.basename(root.exe)) orelse index.lookup(root.name);
+        // The root leads: the process whose parent is outside the group,
+        // the earliest started if there are several.
+        var lead: usize = 0;
+        for (members, 0..) |m, pos| {
+            const outside = if (at.get(procs[m].ppid)) |pi| std.mem.indexOfScalar(u32, members, pi) == null else true;
+            const lead_outside = if (at.get(procs[members[lead]].ppid)) |pi| std.mem.indexOfScalar(u32, members, pi) == null else true;
+            if ((outside and !lead_outside) or (outside == lead_outside and procs[m].start < procs[members[lead]].start)) lead = pos;
+        }
+        std.mem.swap(u32, &members[0], &members[lead]);
+        const root = &procs[members[0]];
+        const unit = classify(root.unit);
+        const by_id = switch (unit) {
+            .app => |id| index.lookup(id),
+            else => null,
+        };
+        const entry = by_id orelse if (unit == .service) null else index.lookup(std.fs.path.basename(root.exe)) orelse index.lookup(root.name);
+        const is_app = if (entry) |e| !e.hidden else false;
         var g: Group = .{
-            .kind = if (entry != null and !entry.?.hidden) .app else .background,
+            .kind = if (is_app) .app else .background,
             .root = root.pid,
-            .name = if (entry) |e| e.name else root.name,
+            .name = if (is_app) entry.?.name else switch (unit) {
+                .service => |name| serviceName(a, name),
+                else => root.name,
+            },
             .icon = if (entry) |e| e.icon else "",
             .members = members,
         };
@@ -222,5 +344,107 @@ test "a process the kernel starts leads its own group, not the kernel thread's" 
             if (p.pid == g.root) break i;
         } else 0)) != null); // every group's root is one of its members
         try std.testing.expect(!std.mem.startsWith(u8, g.name, "kworker"));
+    }
+}
+
+test "a unit's name says whether it holds an app, a service or a whole session" {
+    const T = struct {
+        fn app(unit: []const u8) []const u8 {
+            return switch (classify(unit)) {
+                .app => |id| id,
+                else => "-",
+            };
+        }
+        fn service(unit: []const u8) []const u8 {
+            return switch (classify(unit)) {
+                .service => |n| n,
+                else => "-",
+            };
+        }
+    };
+    try std.testing.expectEqualStrings("com.anthropic.Claude", T.app("app-com.anthropic.Claude-1926.scope"));
+    try std.testing.expectEqualStrings("ghostty", T.app("app-niri-ghostty-2505106.scope"));
+    try std.testing.expectEqualStrings("org.gnome.Nautilus", T.app("app-gnome-org.gnome.Nautilus-4242.scope"));
+    try std.testing.expectEqualStrings("org.mozilla.firefox", T.app("app-flatpak-org.mozilla.firefox-12345.scope"));
+    try std.testing.expectEqualStrings("org.gnome.Calculator", T.app("app-gnome-org.gnome.Calculator@3f2a9c.service"));
+    try std.testing.expectEqualStrings("org.telegram.desktop", T.app("dbus-:1.1-org.telegram.desktop@0.service"));
+    try std.testing.expectEqualStrings("docker", T.service("docker.service"));
+    try std.testing.expectEqualStrings("getty", T.service("getty@tty1.service"));
+    try std.testing.expectEqualStrings("tmux-spawn", T.service("tmux-spawn-4772f86e-775f-4b0d-8753-b89049bc7b3d.scope"));
+    try std.testing.expect(classify("session-2.scope") == .none);
+    try std.testing.expect(classify("user@1001.service") == .none);
+    try std.testing.expect(classify("init.scope") == .none);
+    try std.testing.expect(classify("") == .none);
+}
+
+test "processes are grouped by their unit, whatever started them" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("com.example.Editor", "[Desktop Entry]\nType=Application\nName=Editor\nExec=/opt/editor/run.sh\nIcon=editor\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(900, 1, "systemd", "/usr/lib/systemd/systemd"),
+        // An app behind a wrapper (bwrap, a script): no name matches, the unit does.
+        fake(1000, 900, "bwrap", "/usr/bin/bwrap"),
+        fake(1001, 1000, "electron", "/opt/editor/electron"),
+        fake(1002, 1001, "MainThread", ""),
+        fake(2000, 1, "dockerd", "/usr/bin/dockerd"),
+        fake(2001, 2000, "containerd", "/usr/bin/containerd"),
+        fake(3000, 1, "node", ""),
+    };
+    for (procs[2..5]) |*p| p.unit = "app-flatpak-com.example.Editor-1000.scope";
+    for (procs[5..7]) |*p| p.unit = "docker.service";
+    procs[1].unit = "user@1000.service";
+    procs[7].unit = "docker-0123456789abcdef0123456789abcdef.scope";
+    for (&procs, 0..) |*p, i| p.start = i;
+    const groups = try build(arena.allocator(), &procs, &ix);
+    var editor: ?Group = null;
+    var docker: ?Group = null;
+    var container: ?Group = null;
+    for (groups) |g| {
+        if (std.mem.eql(u8, g.name, "Editor")) editor = g;
+        if (std.mem.eql(u8, g.name, "docker")) docker = g;
+        if (std.mem.startsWith(u8, g.name, "Docker container 0123456789ab")) container = g;
+    }
+    try std.testing.expectEqual(Kind.app, editor.?.kind);
+    try std.testing.expectEqual(@as(usize, 3), editor.?.members.len);
+    try std.testing.expectEqual(@as(i32, 1000), editor.?.root); // the first in the scope leads
+    try std.testing.expectEqualStrings("editor", editor.?.icon);
+    try std.testing.expectEqual(Kind.background, docker.?.kind);
+    try std.testing.expectEqual(@as(usize, 2), docker.?.members.len);
+    try std.testing.expect(container != null);
+}
+
+test "helpers left in the compositor's unit join the app their parent is in" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("browser", "[Desktop Entry]\nType=Application\nName=Browser\nExec=browser %u\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(10, 1, "niri", "/usr/bin/niri"),
+        fake(20, 10, "browser", "/usr/bin/browser"),
+        fake(21, 20, "browser", "/usr/bin/browser"),
+        fake(22, 21, "browser", "/usr/bin/browser"),
+        fake(30, 10, "swaybg", "/usr/bin/swaybg"),
+        fake(40, 1, "tmux", "/usr/bin/tmux"),
+        fake(41, 40, "zsh", "/usr/bin/zsh"),
+        fake(42, 40, "zsh", "/usr/bin/zsh"),
+    };
+    procs[1].unit = "niri.service";
+    procs[2].unit = "app-org.chromium.Chromium-20.scope"; // moved into a scope after starting helpers
+    procs[3].unit = "niri.service";
+    procs[4].unit = "niri.service";
+    procs[5].unit = "niri.service";
+    procs[7].unit = "tmux-spawn-4772f86e-775f-4b0d-8753-b89049bc7b3d.scope";
+    procs[8].unit = "tmux-spawn-565179ff-e1ff-4229-a7d4-239bb8cfe67f.scope";
+    const groups = try build(arena.allocator(), &procs, &ix);
+    for (groups) |g| {
+        if (std.mem.eql(u8, g.name, "Browser")) try std.testing.expectEqual(@as(usize, 3), g.members.len);
+        if (std.mem.eql(u8, g.name, "tmux-spawn")) try std.testing.expectEqual(@as(usize, 2), g.members.len);
+        if (std.mem.eql(u8, g.name, "swaybg")) try std.testing.expectEqual(@as(usize, 1), g.members.len);
     }
 }

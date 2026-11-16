@@ -287,6 +287,7 @@ pub const Snapshot = struct {
                 d.exe = a.dupe(u8, p.exe) catch "";
                 d.name = a.dupe(u8, p.name) catch "";
                 d.program = a.dupe(u8, p.program) catch "";
+                d.unit = a.dupe(u8, p.unit) catch "";
             }
             sn.procs = procs;
         } else |_| {}

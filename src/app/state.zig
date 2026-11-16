@@ -24,7 +24,12 @@ pub const Order = struct {
 pub const Row = union(enum) {
     group: u32,
     proc: u32,
+    /// The Background heading, with how many groups it holds.
+    background: u32,
 };
+
+/// What `selected_app` holds when the Background heading is selected.
+pub const heading: i32 = -1;
 
 const none: u32 = std.math.maxInt(u32);
 
@@ -44,6 +49,8 @@ pub const State = struct {
     gpa: std.mem.Allocator,
     /// Account names, for the User column.
     users: system.users.Users,
+    /// The Background section of Apps is open.
+    background_open: bool = false,
     /// The details pane is open beside the list.
     details_open: bool = false,
     /// Samples the machine, on its own thread once `startSampling` runs.
@@ -366,18 +373,50 @@ pub const State = struct {
         return false;
     }
 
+    /// The apps, then a Background heading over the services and other
+    /// processes, shown when it is open or a search finds something in it.
     fn appRows(s: *State, a: std.mem.Allocator) ![]Row {
         var rows: std.ArrayList(Row) = .empty;
         for (s.groups, 0..) |g, gi| {
             if (g.kind != .app or !s.appMatches(g)) continue;
-            try rows.append(a, .{ .group = @intCast(gi) });
-            if (g.members.len > 1 and s.expanded.contains(g.root)) {
-                const kids = try a.dupe(u32, g.members[1..]);
-                std.mem.sort(u32, kids, s.sample.procs, busier);
-                for (kids) |m| try rows.append(a, .{ .proc = m });
-            }
+            try s.appendGroup(a, &rows, g, gi);
+        }
+        var background: u32 = 0;
+        for (s.groups) |g| background += @intFromBool(g.kind == .background and s.appMatches(g));
+        if (background == 0) return rows.items;
+        try rows.append(a, .{ .background = background });
+        const searching = std.mem.trim(u8, s.search.text(), " ").len > 0;
+        if (!s.background_open and !searching) return rows.items;
+        for (s.groups, 0..) |g, gi| {
+            if (g.kind != .background or !s.appMatches(g)) continue;
+            try s.appendGroup(a, &rows, g, gi);
         }
         return rows.items;
+    }
+
+    fn appendGroup(s: *State, a: std.mem.Allocator, rows: *std.ArrayList(Row), g: apps.Group, gi: usize) !void {
+        try rows.append(a, .{ .group = @intCast(gi) });
+        if (g.members.len > 1 and s.expanded.contains(g.root)) {
+            const kids = try a.dupe(u32, g.members[1..]);
+            std.mem.sort(u32, kids, s.sample.procs, busier);
+            for (kids) |m| try rows.append(a, .{ .proc = m });
+        }
+    }
+
+    /// The pid a row stands for: its app's or its process's, or `heading`.
+    fn rowPid(s: *const State, r: Row) i32 {
+        return switch (r) {
+            .group => |g| s.groups[g].root,
+            .proc => |p| s.sample.procs[p].pid,
+            .background => heading,
+        };
+    }
+
+    /// Opens or closes the Background section.
+    pub fn showBackground(s: *State, show: bool) void {
+        if (s.background_open == show) return;
+        s.background_open = show;
+        s.rebuild();
     }
 
     fn procRows(s: *State, a: std.mem.Allocator) ![]u32 {
@@ -443,11 +482,7 @@ pub const State = struct {
     pub fn selectedRow(s: *const State) ?usize {
         switch (s.page) {
             .apps => for (s.app_rows, 0..) |r, i| {
-                const pid = switch (r) {
-                    .group => |g| s.groups[g].root,
-                    .proc => |p| s.sample.procs[p].pid,
-                };
-                if (pid == s.selected_app) return i;
+                if (s.rowPid(r) == s.selected_app and s.selected_app != 0) return i;
             },
             .processes => for (s.proc_rows, 0..) |p, i| {
                 if (s.sample.procs[p].pid == s.selected_proc) return i;
@@ -467,10 +502,7 @@ pub const State = struct {
 
     fn selectRow(s: *State, i: usize) void {
         switch (s.page) {
-            .apps => s.selected_app = switch (s.app_rows[i]) {
-                .group => |g| s.groups[g].root,
-                .proc => |p| s.sample.procs[p].pid,
-            },
+            .apps => s.selected_app = s.rowPid(s.app_rows[i]),
             .processes => s.selected_proc = s.sample.procs[s.proc_rows[i]].pid,
             else => return,
         }
@@ -509,6 +541,7 @@ pub const State = struct {
                     s.reveal = s.selectedRow();
                 }
             },
+            .background => s.showBackground(want_open),
         }
     }
 
@@ -519,6 +552,7 @@ pub const State = struct {
         switch (s.app_rows[i]) {
             .group => |gi| if (s.groups[gi].members.len > 1) s.toggle(s.groups[gi].root),
             .proc => {},
+            .background => s.showBackground(!s.background_open),
         }
     }
 
@@ -548,17 +582,18 @@ pub const State = struct {
         return if (s.page == .processes) s.selected_proc else s.selected_app;
     }
 
-    /// The app selected in Apps, when the selection is an app and not one of its processes.
+    /// The group selected in Apps (an app or a background one), when the
+    /// selection is a group and not one of its processes.
     pub fn selectedGroup(s: *const State) ?*const apps.Group {
-        if (s.page == .processes or s.selected_app == 0) return null;
-        for (s.groups) |*g| if (g.root == s.selected_app and g.kind == .app) return g;
+        if (s.page == .processes or s.selected_app <= 0) return null;
+        for (s.groups) |*g| if (g.root == s.selected_app and g.kind != .kernel) return g;
         return null;
     }
 
     /// What ending the selection would end: its name and how many processes.
     pub fn target(s: *const State) ?struct { name: []const u8, count: usize } {
         const pid = s.selected();
-        if (pid == 0) return null;
+        if (pid <= 0) return null; // nothing, or the Background heading
         // Only what can be seen: not a row a search or a closed app hides.
         if (s.selectedRow() == null) return null;
         if (s.selectedGroup()) |g| return .{ .name = g.name, .count = g.members.len };

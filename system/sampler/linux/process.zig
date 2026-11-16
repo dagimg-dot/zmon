@@ -70,6 +70,17 @@ pub fn programOf(cmdline: []const u8) []const u8 {
     return std.fs.path.basename(word);
 }
 
+/// The unit a process runs in, from /proc/<pid>/cgroup: the last part of
+/// its unified (v2) control group path.
+pub fn unitOf(cgroup: []const u8) []const u8 {
+    var lines = std.mem.tokenizeScalar(u8, cgroup, '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "0::")) continue;
+        return std.fs.path.basename(line[3..]);
+    }
+    return "";
+}
+
 pub const Signal = enum { quit, kill };
 
 pub fn currentUid() u32 {
@@ -103,6 +114,8 @@ const Known = struct {
     exe: []const u8,
     /// Owned by the reader; see `Proc.program`.
     program: []const u8 = "",
+    /// Owned by the reader; see `Proc.unit`.
+    unit: []const u8 = "",
     /// The scan that last met it.
     seen: u32,
     kthread: bool = false,
@@ -146,6 +159,7 @@ pub const Reader = struct {
         while (it.next()) |k| {
             r.gpa.free(k.exe);
             r.gpa.free(k.program);
+            r.gpa.free(k.unit);
         }
         r.known.deinit(r.gpa);
     }
@@ -186,6 +200,7 @@ pub const Reader = struct {
                 .comm = comm,
                 .exe = known.exe,
                 .program = known.program,
+                .unit = known.unit,
                 .nice = st.nice,
                 .uid = known.uid,
                 .state = st.state,
@@ -240,6 +255,7 @@ pub const Reader = struct {
             }
             r.gpa.free(slot.value_ptr.exe);
             r.gpa.free(slot.value_ptr.program);
+            r.gpa.free(slot.value_ptr.unit);
         }
         if (!kthread) {
             var path: [32]u8 = undefined;
@@ -259,6 +275,10 @@ pub const Reader = struct {
                 } else |_| {}
             }
             fresh.program = r.gpa.dupe(u8, program) catch "";
+            // The unit doesn't change while a process runs one program.
+            if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/cgroup", .{pid}) catch "", &buf)) |cg| {
+                fresh.unit = r.gpa.dupe(u8, unitOf(cg)) catch "";
+            } else |_| {}
         }
         slot.value_ptr.* = fresh;
         return slot.value_ptr;
@@ -293,6 +313,7 @@ pub const Reader = struct {
             for (gone[0..n]) |pid| if (r.known.fetchRemove(pid)) |kv| {
                 r.gpa.free(kv.value.exe);
                 r.gpa.free(kv.value.program);
+                r.gpa.free(kv.value.unit);
             };
             if (n < gone.len) return;
         }
@@ -328,6 +349,12 @@ test "an executable path keeps its own name and only loses a deleted marker" {
     try std.testing.expectEqualStrings("/usr/lib/xdg-desktop-portal", exePath("/usr/lib/xdg-desktop-portal"));
     try std.testing.expectEqualStrings("/usr/lib/systemd/systemd", exePath("/usr/lib/systemd/systemd"));
     try std.testing.expectEqualStrings("/usr/bin/node", exePath("/usr/bin/node (deleted)"));
+}
+
+test "a process's unit is the last part of its control group" {
+    try std.testing.expectEqualStrings("app-com.anthropic.Claude-1926.scope", unitOf("0::/user.slice/user-1001.slice/user@1001.service/app.slice/app-com.anthropic.Claude-1926.scope\n"));
+    try std.testing.expectEqualStrings("docker.service", unitOf("0::/system.slice/docker.service\n"));
+    try std.testing.expectEqualStrings("", unitOf("1:name=systemd:/foo\n")); // cgroup v1 only: no unit
 }
 
 test "a command line's program is its first word, by file name" {

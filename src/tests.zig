@@ -28,9 +28,9 @@ test "Apps lists the apps that are open, and Processes every process" {
     try tester(&t, &state);
     defer t.deinit();
     try std.testing.expectEqual(app_state.Page.apps, state.page);
-    for (state.app_rows) |row| switch (row) {
+    for (state.app_rows) |row| switch (row) { // Background is closed: apps only above it
         .group => |g| try std.testing.expectEqual(.app, state.groups[g].kind),
-        .proc => {},
+        .proc, .background => {},
     };
     try t.clickText("Processes");
     t.settle(0.2);
@@ -271,7 +271,7 @@ test "Right shows an app's processes and Left hides them again" {
     defer t.deinit();
     const at = for (state.app_rows, 0..) |r, i| switch (r) {
         .group => |g| if (state.groups[g].members.len > 1) break i,
-        .proc => {},
+        .proc, .background => {},
     } else return error.SkipZigTest; // no app with helpers is running
     while (state.selectedRow() != at) _ = t.shortcut(.{ .key = ui.Shortcut.down });
     const root = state.selected_app;
@@ -697,4 +697,32 @@ test "Ctrl+I shows the selected process's details, its command line included" {
     try std.testing.expect(t.shortcut(.{ .key = 'i', .cmd = true }));
     t.settle(0.2);
     try std.testing.expect(!t.hasText("Command line"));
+}
+
+test "Background opens under the apps with Right, and closes with Left" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const at = for (state.app_rows, 0..) |r, i| {
+        if (r == .background) break i;
+    } else return error.SkipZigTest; // nothing in the background here
+    const closed = state.app_rows.len;
+    t.key(.end); // the heading is the last row while it is closed
+    try std.testing.expectEqual(at, state.selectedRow().?);
+    try std.testing.expect(state.target() == null); // a heading can't be ended
+    t.key(.right);
+    try std.testing.expect(state.background_open);
+    try std.testing.expect(state.app_rows.len > closed);
+    var background: usize = 0;
+    for (state.app_rows) |r| switch (r) {
+        .group => |g| background += @intFromBool(state.groups[g].kind == .background),
+        else => {},
+    };
+    try std.testing.expect(background > 0);
+    t.key(.left);
+    try std.testing.expect(!state.background_open);
+    try std.testing.expectEqual(closed, state.app_rows.len);
 }
