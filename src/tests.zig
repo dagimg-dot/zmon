@@ -11,6 +11,7 @@ test {
     _ = @import("apps.zig");
     _ = @import("desktop.zig");
     _ = @import("xdg.zig");
+    _ = @import("icons.zig");
     _ = @import("fmt.zig");
     _ = @import("charts.zig");
     _ = @import("theme.zig");
