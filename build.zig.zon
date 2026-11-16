@@ -1,0 +1,13 @@
+.{
+    .name = .zmon,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .nanoui = .{
+            .url = "git+https://github.com/justrach/nanoui?ref=v0.14.6#c4de0bb43e23cf289af2091a461871676d970e36",
+            .hash = "nanoui-0.14.6-we0KMYrDQwD3BB0rVUDlHfF-f8b0KuLbhPI6o6yjitIS",
+        },
+    },
+    .fingerprint = 0x2da6fca00d55849b,
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
