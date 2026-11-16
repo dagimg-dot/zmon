@@ -1,22 +1,19 @@
-//! The Processes page: apps first, then background processes and the
-//! kernel's threads. A group shows its totals; open it to see what it
-//! started. Columns sort when their header is clicked.
+//! The process table: a sortable header over striped rows built only as they
+//! come into view. A group row shows its totals and opens to its processes.
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
-const kit = nanoui.kit;
-const app = @import("app/state.zig");
-const apps = @import("zmon-system").apps;
 const core = @import("zmon-core");
+const apps = @import("zmon-system").apps;
 const fmt = core.fmt;
-const theme = @import("ui/theme.zig");
+const app = @import("../../app/state.zig");
+const theme = @import("../../ui/theme.zig");
+const icon = @import("icon.zig");
 
 const State = app.State;
-const row_h = 30;
-const section_h = 34;
+pub const row_h = 30;
 const header_h = 30;
 const pad = 14;
-const icon_size = 20;
 
 const Column = struct { title: []const u8, sort: app.Sort, width: ?f32 = null, right: bool = true };
 const columns = [_]Column{
@@ -27,8 +24,7 @@ const columns = [_]Column{
 };
 const threads_w = 68;
 
-pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
-    toolbar(c, s, k);
+pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
     header(c, s, k);
     _ = c.leaf(.{ .width = .fill, .height = .{ .px = 1 }, .background = k.separator }, .none, null);
     var rows = ui.list(c, .{ .count = s.rows.len, .row_height = row_h });
@@ -40,16 +36,6 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
         }
     }
     rows.end();
-}
-
-fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const bar = ui.div(c).row().wFull().h(56).px(pad + 4).itemsCenter().gap(12);
-    defer bar.end();
-    ui.text(c, "Processes", .{ .size = 18, .weight = .bold, .color = k.text });
-    ui.text(c, c.print("{d} running, {d} threads", .{ s.sampler.procs.len, s.sampler.threads }), .{ .size = 12.5, .color = k.secondary });
-    ui.spacer(c);
-    const t = s.target();
-    if (kit.button(c, "End task", .{ .variant = .outline, .size = .sm, .disabled = t == null }).clicked) s.confirm = true;
 }
 
 fn header(c: *ui.Context, s: *State, k: theme.Colors) void {
@@ -113,33 +99,11 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
         } else {
             _ = c.leaf(.{ .width = .{ .px = 18 }, .height = .{ .px = 18 } }, .none, null);
         }
-        appIcon(c, s, k, g);
+        icon.draw(c, s, k, g);
         ui.text(c, g.name, .{ .size = 13.5, .weight = if (g.kind == .app) .semibold else .regular, .color = ink });
         if (g.members.len > 1) ui.text(c, c.print("({d})", .{g.members.len}), .{ .size = 12, .color = faint });
     }
     values(c, ink, faint, g.cpu, g.memory, g.disk_bps, g.kind != .kernel, g.threads);
-}
-
-/// The group's launcher icon, or a plain tile when it has none or can't be drawn.
-fn appIcon(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group) void {
-    if (s.icons.get(g.icon)) |icon| {
-        const drawn = switch (icon.kind) {
-            .svg => ui.svg(c, .{ .key = icon.path, .bytes = icon.bytes, .size = icon_size }),
-            .png, .jpeg => ui.image(c, .{ .key = icon.path, .bytes = icon.bytes, .box = .{ .w = icon_size, .h = icon_size }, .radius = 4 }),
-        };
-        if (drawn) return;
-    }
-    const tile = ui.div(c).row().size(icon_size, icon_size).itemsCenter().justifyCenter().rounded(5).bg(k.separator);
-    defer tile.end();
-    switch (g.kind) {
-        .app => {
-            const len = if (g.name.len > 0) std.unicode.utf8ByteSequenceLength(g.name[0]) catch 1 else 0;
-            const first = c.print("{s}", .{g.name[0..@min(len, g.name.len)]});
-            ui.text(c, first, .{ .size = 11, .weight = .bold, .color = k.secondary });
-        },
-        .background => ui.icon(c, "gearshape", .{ .size = 11, .frame = icon_size, .color = k.secondary }),
-        .kernel => ui.icon(c, "cpu", .{ .size = 11, .frame = icon_size, .color = k.secondary }),
-    }
 }
 
 fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, i: usize) void {
@@ -178,22 +142,4 @@ fn num(c: *ui.Context, col: Column, text: []const u8, color: ui.Color, strong: b
     const d = cell(c, col, row_h);
     defer d.end();
     ui.text(c, text, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = color });
-}
-
-pub fn confirmDialog(c: *ui.Context, s: *State, k: theme.Colors) void {
-    _ = k;
-    const t = s.target();
-    const name = if (t) |x| x.name else "";
-    const count = if (t) |x| x.count else 0;
-    const dlg = kit.dialog(c, "end-task", &s.confirm, .{
-        .title = c.print("End {s}?", .{name}),
-        .description = if (count > 1)
-            c.print("This asks {d} processes to quit. Unsaved work in them may be lost.", .{count})
-        else
-            "This asks the process to quit. Unsaved work in it may be lost.",
-        .ok = "End task",
-        .ok_variant = .danger,
-        .cancel = "Cancel",
-    }) orelse return;
-    if (dlg.end() == .ok) s.endTask(false);
 }

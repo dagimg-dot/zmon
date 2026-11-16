@@ -5,8 +5,8 @@ const ui = nanoui.ui;
 const core = @import("zmon-core");
 const state = @import("state.zig");
 const theme = @import("../ui/theme.zig");
-const processes = @import("../processes_view.zig");
-const performance = @import("../performance_view.zig");
+const processes = @import("../pages/processes/root.zig");
+const performance = @import("../pages/performance/root.zig");
 
 const State = state.State;
 const Page = state.Page;
@@ -32,7 +32,7 @@ pub fn view(s: *State, c: *ui.Context) void {
             .performance => performance.page(c, s, k),
         }
     }
-    processes.confirmDialog(c, s, k);
+    processes.confirmDialog(c, s);
     s.toaster.view(c);
 }
 
