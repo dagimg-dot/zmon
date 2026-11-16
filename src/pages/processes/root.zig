@@ -48,7 +48,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
     ui.spacer(c);
     ui.key(c, "search");
     if (ui.textField(c, &s.search, .{ .placeholder = "Search", .width = .{ .px = 220 }, .size = 13 }).changed) s.rebuild();
-    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask();
+    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }
 
 fn procRow(c: *ui.Context, s: *State, k: theme.Colors, index: u32, i: usize) void {

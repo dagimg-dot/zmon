@@ -30,6 +30,7 @@ pub const groups = [_]Group{
         .{ .keys = &.{"→"}, .what = "Show an app's processes" },
         .{ .keys = &.{"←"}, .what = "Hide them, or go back to the app" },
         .{ .keys = &.{"Delete"}, .what = "End task (Return confirms)" },
+        .{ .keys = &.{ "Shift", "Delete" }, .what = "Force quit" },
         .{ .keys = &.{"Esc"}, .what = "Go back where you came from" },
         .{ .keys = &.{"Type"}, .what = "Start a search" },
     } },

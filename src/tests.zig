@@ -561,8 +561,8 @@ test "End task's dialog keeps Tab, the arrows and the screen reader to itself, a
     t.settle(0.3);
     try std.testing.expect(state.confirm);
     try std.testing.expectEqualStrings("End task", try focusedLabel(&t, arena.allocator()));
-    // Close, Cancel and End task are the only Tab stops, however often Tab is pressed.
-    try std.testing.expectEqual(@as(usize, 3), t.ctx.last_focusable_ids.items.len);
+    // Close, Cancel, Force quit and End task are the only Tab stops, however often Tab is pressed.
+    try std.testing.expectEqual(@as(usize, 4), t.ctx.last_focusable_ids.items.len);
     for (0..7) |_| {
         t.key(.tab);
         try std.testing.expect(std.mem.indexOfScalar(u64, t.ctx.last_focusable_ids.items, t.ctx.focus) != null);
@@ -603,4 +603,54 @@ test "the shortcuts overlay takes the focus and gives it back where it was" {
     t.settle(0.4);
     try std.testing.expect(!state.shortcuts_open);
     try std.testing.expectEqual(before, t.ctx.focus);
+}
+
+fn toasted(state: *app_state.State, part: []const u8) bool {
+    for (state.toaster.items.items) |e| if (std.mem.indexOf(u8, e.text, part) != null) return true;
+    return false;
+}
+
+test "End task acts only on a selection that can be seen" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.page = .processes;
+    _ = state.tick(0);
+    if (state.proc_rows.len == 0) return error.SkipZigTest;
+    state.selected_proc = state.sampler.procs[state.proc_rows[0]].pid;
+    try std.testing.expect(state.target() != null);
+    state.search.set("no process is called this");
+    state.rebuild();
+    try std.testing.expect(state.target() == null); // hidden by the search
+}
+
+test "a process that ignores End task is reported still running, and Force quit stops it" {
+    const io = std.testing.io;
+    // A child of the test's own that ignores the quit signal: nothing else is signalled.
+    var child = std.process.spawn(io, .{
+        .argv = &.{ "/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done" },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch return error.SkipZigTest;
+    defer child.kill(io);
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.page = .processes;
+    var now: f64 = 0;
+    _ = state.tick(now);
+    now += 0.3;
+    _ = state.tick(now);
+    state.selected_proc = child.id.?;
+    try std.testing.expect(state.target() != null);
+    state.endTask(false);
+    try std.testing.expect(toasted(&state, "to quit"));
+    for (0..4) |_| {
+        now += 1.0;
+        _ = state.tick(now);
+    }
+    try std.testing.expect(toasted(&state, "is still running"));
+    state.endTask(true);
+    try std.testing.expect(toasted(&state, "Stopped"));
+    const term = try child.wait(io);
+    try std.testing.expect(term == .signal);
 }

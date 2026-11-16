@@ -102,7 +102,8 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool, in_search: bool) void {
     if (plain(c, .right)) s.openSelected(true);
     if (plain(c, .left)) s.openSelected(false);
     if (plain(c, .enter)) s.toggleSelected();
-    if (plain(c, .delete)) s.askEndTask();
+    if (plain(c, .delete)) s.askEndTask(false);
+    if (withShift(c, .delete)) s.askEndTask(true);
     // Typing on the list starts a search with what was typed.
     const typed = c.input.chars;
     if (typed.len > 0 and !c.input.ctrl and !c.input.alt and !c.input.cmd and typed[0] > ' ' and typed[0] != 0x7f) {
@@ -132,6 +133,13 @@ fn ctrl(c: *ui.Context, key: u21) bool {
 /// A key with no modifier, as plain key input (how Linux sends Home, Enter, Delete).
 fn plain(c: *ui.Context, k: Key) bool {
     if (c.input.key != k or c.input.ctrl or c.input.alt or c.input.cmd) return false;
+    c.input.key = null;
+    c.changed = true;
+    return true;
+}
+
+fn withShift(c: *ui.Context, k: Key) bool {
+    if (c.input.key != k or !c.input.shift or c.input.ctrl or c.input.alt or c.input.cmd) return false;
     c.input.key = null;
     c.changed = true;
     return true;

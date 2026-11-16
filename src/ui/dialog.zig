@@ -21,12 +21,16 @@ pub const Options = struct {
     /// The buttons at the bottom ("" leaves one out). OK is the main one.
     ok: []const u8 = "",
     cancel: []const u8 = "",
+    /// A second action between Cancel and OK ("" leaves it out).
+    alt: []const u8 = "",
+    /// The second action can't be undone.
+    alt_danger: bool = false,
     /// OK does something that can't be undone.
     danger: bool = false,
 };
 
 /// What the dialog's buttons did this frame.
-pub const Result = enum { none, ok, cancel };
+pub const Result = enum { none, ok, alt, cancel };
 
 /// An open dialog: draw its content, then `end`.
 pub const Dialog = struct {
@@ -45,10 +49,11 @@ pub const Dialog = struct {
         d.body.end();
         var result: Result = .none;
         var main: u64 = 0;
-        if (d.opts.ok.len > 0 or d.opts.cancel.len > 0) {
+        if (d.opts.ok.len > 0 or d.opts.cancel.len > 0 or d.opts.alt.len > 0) {
             const f = ui.div(c).row().wFull().gap(8).justifyEnd().pt(4);
             defer f.end();
             if (d.opts.cancel.len > 0 and controls.button(c, d.k, d.opts.cancel, .{})) result = .cancel;
+            if (d.opts.alt.len > 0 and controls.button(c, d.k, d.opts.alt, .{ .danger = d.opts.alt_danger })) result = .alt;
             if (d.opts.ok.len > 0) {
                 if (controls.button(c, d.k, d.opts.ok, .{ .danger = d.opts.danger })) result = .ok;
                 main = last(c);

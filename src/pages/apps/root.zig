@@ -56,7 +56,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
     ui.text(c, c.print("{d} open", .{n}), .{ .size = 12.5, .color = k.secondary });
     ui.spacer(c);
     search(c, s);
-    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask();
+    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }
 
 fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize) void {

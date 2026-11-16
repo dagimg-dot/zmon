@@ -27,6 +27,18 @@ pub const Row = union(enum) {
 
 const none: u32 = std.math.maxInt(u32);
 
+/// Samples to wait before saying a process that was asked to quit didn't.
+const quit_wait = 3;
+
+/// What was asked to quit: up to 64 of its processes, by pid and start time.
+const QuitWatch = struct {
+    due: u64,
+    name: [64]u8 = undefined,
+    name_len: u8 = 0,
+    procs: [64]struct { pid: i32, start: u64 } = undefined,
+    len: u8 = 0,
+};
+
 pub const State = struct {
     gpa: std.mem.Allocator,
     sampler: system.sampler.Sampler,
@@ -68,6 +80,9 @@ pub const State = struct {
     list_id: u64 = 0,
     /// The focused box when the last frame ended.
     last_focus: u64 = 0,
+    /// What was asked to quit, checked a few samples later.
+    quit_watch: ?QuitWatch = null,
+    toast_buf: [160]u8 = undefined,
     /// Settings turned reduced motion on, over whatever the system said.
     motion_forced: bool = false,
     expanded: std.AutoHashMapUnmanaged(i32, void) = .empty,
@@ -197,6 +212,7 @@ pub const State = struct {
         if (s.sampler.samples == 0 or now >= s.next_sample) {
             s.sampler.collectNow(); // `now` only schedules: rates use the machine's clock
             s.rebuild();
+            s.checkQuit();
             // Rates need two samples: the second comes quickly so the first screen isn't all zeros.
             // Keep to the second, not a second after each late frame, so a minute
             // of samples is a minute; after a stall, start again from now.
@@ -454,10 +470,11 @@ pub const State = struct {
         }
     }
 
-    /// Asks before ending the selection when Settings says to, else ends it.
-    pub fn askEndTask(s: *State) void {
+    /// Asks before ending the selection when Settings says to (the dialog
+    /// offers both End task and Force quit), else ends it, by force if asked.
+    pub fn askEndTask(s: *State, force: bool) void {
         if (s.target() == null) return;
-        if (s.settings.confirm_end_task) s.confirm = true else s.endTask(false);
+        if (s.settings.confirm_end_task) s.confirm = true else s.endTask(force);
     }
 
     /// The pid selected on the page shown.
@@ -476,6 +493,8 @@ pub const State = struct {
     pub fn target(s: *const State) ?struct { name: []const u8, count: usize } {
         const pid = s.selected();
         if (pid == 0) return null;
+        // Only what can be seen: not a row a search or a closed app hides.
+        if (s.selectedRow() == null) return null;
         if (s.selectedGroup()) |g| return .{ .name = g.name, .count = g.members.len };
         if (s.sampler.find(pid)) |p| return .{ .name = p.name, .count = 1 };
         return null;
@@ -508,10 +527,58 @@ pub const State = struct {
             }
             if (control.signal(s.sampler.io, p.pid, p.start, if (force) .kill else .quit)) sent += 1;
         }
+        const name = if (s.target()) |x| x.name else "it";
         if (sent > 0) {
-            s.toaster.push(.{ .title = if (force) "Killed" else "Asked to quit", .message = "" });
+            if (force) {
+                s.toaster.push(.{ .title = s.toastText("Stopped {s}", .{name}), .message = "Force quit ends a process at once." });
+            } else {
+                s.toaster.push(.{ .title = s.toastText("Asked {s} to quit", .{name}), .message = "" });
+                s.watchQuit(name, members);
+            }
         } else if (refused > 0) {
-            s.toaster.push(.{ .title = "Can't end that", .message = "Only your own processes can be ended here." });
+            s.toaster.push(.{ .title = s.toastText("Can't end {s}", .{name}), .message = "Only your own processes can be ended here." });
+        } else {
+            s.toaster.push(.{ .title = s.toastText("Couldn't end {s}", .{name}), .message = "It may have ended already." });
         }
+    }
+
+    /// A toast's text, formatted into a buffer of the state's (the toaster copies it).
+    fn toastText(s: *State, comptime f: []const u8, args: anytype) []const u8 {
+        return std.fmt.bufPrint(&s.toast_buf, f, args) catch f;
+    }
+
+    /// Remembers what was asked to quit, to say so if it is still running a
+    /// few samples later, when Force quit is what's needed.
+    fn watchQuit(s: *State, name: []const u8, members: []const u32) void {
+        var w: QuitWatch = .{ .due = s.sampler.samples + quit_wait };
+        w.name_len = @intCast(@min(name.len, w.name.len));
+        @memcpy(w.name[0..w.name_len], name[0..w.name_len]);
+        for (members) |i| {
+            if (w.len == w.procs.len) break;
+            const p = s.sampler.procs[i];
+            w.procs[w.len] = .{ .pid = p.pid, .start = p.start };
+            w.len += 1;
+        }
+        s.quit_watch = w;
+    }
+
+    /// After a quit was asked: still running a few seconds on, say so.
+    fn checkQuit(s: *State) void {
+        const w = s.quit_watch orelse return;
+        if (s.sampler.samples < w.due) return;
+        s.quit_watch = null;
+        var alive: usize = 0;
+        for (w.procs[0..w.len]) |q| {
+            for (s.sampler.procs) |p| if (p.pid == q.pid and p.start == q.start) {
+                alive += 1;
+                break;
+            };
+        }
+        if (alive == 0) return;
+        s.toaster.push(.{
+            .title = s.toastText("{s} is still running", .{w.name[0..w.name_len]}),
+            .message = "It didn't quit. Shift+Delete or Force quit stops it, losing unsaved work.",
+            .duration = 8,
+        });
     }
 };
