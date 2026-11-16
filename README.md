@@ -28,6 +28,7 @@ Every page, list and action has a key. Ctrl+? (or F1) shows them all in zmon.
 | Up, Down | Select the row above or below |
 | Home, End | First or last row |
 | Right, Left | Show an app's processes; hide them, or go back to the app |
+| Ctrl+I | Show or hide the selected process's details |
 | Delete | End task (Return confirms) |
 | Shift+Delete | Force quit: stop it at once, losing unsaved work |
 | Esc | Go back where you came from: out of the search (clearing it), the list, the page |

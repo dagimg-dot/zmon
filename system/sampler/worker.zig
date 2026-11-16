@@ -27,8 +27,8 @@ pub const Worker = struct {
     /// The third buffer's index, with `fresh` set when it holds a sample the
     /// app hasn't taken.
     middle: std.atomic.Value(u8) = .init(2),
-    /// What the app wants read (`Want` packed), set from the app's thread.
-    want: std.atomic.Value(u32) = .init(packWant(.{})),
+    /// What the app wants read, set from the app's thread.
+    want: WantCell = .{},
     /// Bumped to wake the worker early: a list opened, or stop.
     signal: std.atomic.Value(u32) = .init(0),
     stopping: std.atomic.Value(bool) = .init(false),
@@ -80,7 +80,7 @@ pub const Worker = struct {
     /// Says what to read from the next sample on. `now`: sample at once
     /// rather than at the next second (a list was just opened).
     pub fn ask(w: *Worker, want: root.Want, now: bool) void {
-        w.want.store(packWant(want), .release);
+        w.want.set(want);
         if (now) w.poke();
     }
 
@@ -112,7 +112,7 @@ pub const Worker = struct {
     }
 
     fn sampleOnce(w: *Worker) void {
-        w.sampler.want = unpackWant(w.want.load(.acquire));
+        w.sampler.want = w.want.get();
         w.sampler.collectNow();
         w.bufs[w.back].fill(&w.sampler);
         const old = w.middle.swap(w.back | fresh, .acq_rel);
@@ -151,12 +151,50 @@ pub const Worker = struct {
     }
 };
 
-fn packWant(want: root.Want) u32 {
-    return @as(u32, @intFromBool(want.procs)) | @as(u32, @intFromBool(want.kernel_threads)) << 1;
-}
+/// `Want`, written by the app's thread and read by the worker's: a sequence
+/// lock, odd while a write is under way, so the worker never reads half of one.
+const WantCell = struct {
+    seq: std.atomic.Value(u32) = .init(0),
+    flags: std.atomic.Value(u32) = .init(3),
+    pid: std.atomic.Value(i32) = .init(0),
+    start: std.atomic.Value(u64) = .init(0),
 
-fn unpackWant(v: u32) root.Want {
-    return .{ .procs = v & 1 != 0, .kernel_threads = v & 2 != 0 };
+    /// One writer only: the app's thread.
+    fn set(c: *WantCell, want: root.Want) void {
+        _ = c.seq.fetchAdd(1, .acq_rel);
+        c.flags.store(@as(u32, @intFromBool(want.procs)) | @as(u32, @intFromBool(want.kernel_threads)) << 1, .release);
+        c.pid.store(want.detail_pid, .release);
+        c.start.store(want.detail_start, .release);
+        _ = c.seq.fetchAdd(1, .acq_rel);
+    }
+
+    fn get(c: *WantCell) root.Want {
+        while (true) {
+            const before = c.seq.load(.acquire);
+            if (before & 1 != 0) {
+                std.atomic.spinLoopHint();
+                continue;
+            }
+            const flags = c.flags.load(.acquire);
+            const want: root.Want = .{
+                .procs = flags & 1 != 0,
+                .kernel_threads = flags & 2 != 0,
+                .detail_pid = c.pid.load(.acquire),
+                .detail_start = c.start.load(.acquire),
+            };
+            if (c.seq.load(.acquire) == before) return want;
+        }
+    }
+};
+
+test "what the app wants reads back whole" {
+    var c: WantCell = .{};
+    try std.testing.expect(c.get().procs and c.get().kernel_threads);
+    c.set(.{ .procs = false, .kernel_threads = true, .detail_pid = 42, .detail_start = 9001 });
+    const w = c.get();
+    try std.testing.expect(!w.procs and w.kernel_threads);
+    try std.testing.expectEqual(@as(i32, 42), w.detail_pid);
+    try std.testing.expectEqual(@as(u64, 9001), w.detail_start);
 }
 
 test "the triple buffer hands over each sample once, and never the one being written" {

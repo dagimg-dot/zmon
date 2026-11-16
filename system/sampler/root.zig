@@ -44,6 +44,9 @@ const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
 pub const Want = struct {
     procs: bool = true,
     kernel_threads: bool = true,
+    /// The process the details pane shows (0: none), and when it started.
+    detail_pid: i32 = 0,
+    detail_start: u64 = 0,
 };
 
 pub const Sampler = struct {
@@ -74,6 +77,8 @@ pub const Sampler = struct {
     rates_pending: bool = false,
     /// The last sample read the process list.
     procs_read: bool = false,
+    /// The details of `want.detail_pid`, in the arena, when it asked for them.
+    detail: ?core.Details = null,
     history: History = .{},
 
     hz: u64 = 100,
@@ -126,6 +131,7 @@ pub const Sampler = struct {
         const first = s.samples == 0;
         _ = s.arena.reset(.retain_capacity);
         s.collectProcs(dt, first);
+        s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start) else null;
         s.collectCpu();
         s.memory = backend.memory.read(s.io);
         s.collectDisk(dt, first);
@@ -241,6 +247,10 @@ pub const Snapshot = struct {
     samples: u64 = 0,
     /// It read the process list.
     procs_read: bool = false,
+    /// The selected process's details, when the app asked for them.
+    detail: ?core.Details = null,
+    /// Clock ticks a second, to turn start times into ages.
+    hz: u64 = 100,
     history: History = .{},
     machine_buf: [128]u8 = undefined,
     machine_len: usize = 0,
@@ -276,6 +286,7 @@ pub const Snapshot = struct {
                 d.comm = a.dupe(u8, p.comm) catch "";
                 d.exe = a.dupe(u8, p.exe) catch "";
                 d.name = a.dupe(u8, p.name) catch "";
+                d.program = a.dupe(u8, p.program) catch "";
             }
             sn.procs = procs;
         } else |_| {}
@@ -292,6 +303,15 @@ pub const Snapshot = struct {
         sn.process_count = s.process_count;
         sn.samples = s.samples;
         sn.procs_read = s.procs_read;
+        sn.hz = s.hz;
+        sn.detail = null;
+        if (s.detail) |d| {
+            var c = d;
+            c.cmdline = a.dupe(u8, d.cmdline) catch "";
+            c.cwd = a.dupe(u8, d.cwd) catch "";
+            c.cgroup = a.dupe(u8, d.cgroup) catch "";
+            sn.detail = c;
+        }
         sn.history = s.history;
         sn.machine_buf = s.machine_buf;
         sn.machine_len = s.machine_len;

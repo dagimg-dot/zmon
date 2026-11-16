@@ -7,6 +7,7 @@ pub const disk = @import("disk.zig");
 pub const network = @import("network.zig");
 pub const load = @import("load.zig");
 pub const machine = @import("machine.zig");
+pub const details = @import("details.zig");
 
 pub const clockTicks = units.clockTicks;
 pub const pageSize = units.pageSize;
@@ -20,4 +21,5 @@ test {
     _ = network;
     _ = load;
     _ = machine;
+    _ = details;
 }

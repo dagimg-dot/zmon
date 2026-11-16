@@ -1,5 +1,6 @@
 //! A sortable table: a header of columns over striped rows of the same
 //! widths. The pages keep what is sorted; this draws it and reports clicks.
+const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const fmt = @import("zmon-core").fmt;
@@ -17,7 +18,39 @@ pub const Column = struct {
     right: bool = true,
     /// Whether clicking the header sorts by it.
     sorts: bool = true,
+    /// When the table is narrow, columns go in this order, highest first;
+    /// 0 never goes.
+    drop: u8 = 0,
+    /// Left out this frame (`fit`).
+    hidden: bool = false,
 };
+
+/// The least room the name keeps before other columns give way.
+pub const min_name = 200;
+
+/// Hides columns, the highest `drop` first, until the name has `min_name`
+/// in a table `width` wide (0: not laid out yet, so all stay).
+pub fn fit(columns: []Column, width: f32) void {
+    for (columns) |*col| col.hidden = false;
+    if (width <= 0) return;
+    while (true) {
+        var fixed: f32 = 2 * pad;
+        for (columns) |col| if (!col.hidden) {
+            fixed += col.width orelse 0;
+        };
+        if (width - fixed >= min_name) return;
+        var worst: ?*Column = null;
+        for (columns) |*col| if (!col.hidden and col.drop > 0) {
+            if (worst == null or col.drop > worst.?.drop) worst = col;
+        };
+        (worst orelse return).hidden = true;
+    }
+}
+
+/// The width the table had in the last frame, by its list box (0 at first).
+pub fn lastWidth(c: *ui.Context, list_id: u64) f32 {
+    return if (c.rects.get(list_id)) |r| r.w else 0;
+}
 
 /// The header row and the line under it; returns the column clicked, if one was.
 pub fn header(c: *ui.Context, k: theme.Colors, columns: []const Column, sorted: usize, ascending: bool) ?usize {
@@ -26,6 +59,7 @@ pub fn header(c: *ui.Context, k: theme.Colors, columns: []const Column, sorted: 
         const h = ui.div(c).row().wFull().h(header_h).itemsCenter().px(pad);
         defer h.end();
         for (columns, 0..) |col, i| {
+            if (col.hidden) continue;
             ui.key(c, col.title);
             var d = cell(c, col, header_h).gap(4);
             if (col.sorts) d = d.control().hover(k.hover);
@@ -54,6 +88,7 @@ pub fn cell(c: *ui.Context, col: Column, h: f32) ui.Div {
 
 /// A cell holding one value.
 pub fn value(c: *ui.Context, col: Column, text: []const u8, color: ui.Color, strong: bool) void {
+    if (col.hidden) return;
     const d = cell(c, col, row_h);
     defer d.end();
     ui.text(c, text, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = color });
@@ -137,9 +172,45 @@ pub fn list(c: *ui.Context, count: usize, reveal: ?usize) ui.ListRows {
     return ui.list(c, .{ .count = count, .row_height = row_h, .scroll_to = to });
 }
 
+/// The program a process runs, when its name doesn't already say it: a
+/// "MainThread" that is node. Null when the name says enough.
+pub fn programNote(name: []const u8, program: []const u8) ?[]const u8 {
+    if (program.len == 0) return null;
+    if (std.ascii.startsWithIgnoreCase(program, name) or std.ascii.startsWithIgnoreCase(name, program)) return null;
+    return program;
+}
+
+/// A process's name, with its program after it, quieter, when that adds something.
+pub fn processName(c: *ui.Context, i: Ink, name: []const u8, program: []const u8, strong: bool) void {
+    ui.text(c, name, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = i.text });
+    if (programNote(name, program)) |note| ui.text(c, note, .{ .size = 11.5, .color = i.faint });
+}
+
 /// A line in the middle of an empty list.
 pub fn empty(c: *ui.Context, k: theme.Colors, message: []const u8) void {
     const d = ui.div(c).column().wFull().grow().itemsCenter().pt(48);
     defer d.end();
     ui.text(c, message, .{ .size = 13, .color = k.secondary });
+}
+
+test "a process's program is shown only when its name doesn't say it" {
+    try std.testing.expectEqualStrings("node", programNote("MainThread", "node").?);
+    try std.testing.expect(programNote("brave", "brave") == null);
+    try std.testing.expect(programNote("claude-desktop", "claude") == null);
+    try std.testing.expect(programNote("kworker/0:1", "") == null);
+}
+
+test "a narrow table drops its columns in order and keeps the name's room" {
+    var cols = [_]Column{
+        .{ .title = "Name", .right = false },
+        .{ .title = "PID", .width = 72, .drop = 2 },
+        .{ .title = "CPU", .width = 76 },
+        .{ .title = "Threads", .width = 68, .drop = 3 },
+    };
+    fit(&cols, 1000);
+    for (cols) |c| try std.testing.expect(!c.hidden);
+    fit(&cols, 2 * pad + 76 + 72 + min_name); // room for one droppable
+    try std.testing.expect(cols[3].hidden and !cols[1].hidden);
+    fit(&cols, 300); // CPU never goes, whatever is left
+    try std.testing.expect(cols[1].hidden and cols[3].hidden and !cols[2].hidden);
 }

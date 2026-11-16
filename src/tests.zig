@@ -10,6 +10,8 @@ test {
     _ = @import("ui/charts.zig");
     _ = @import("ui/theme.zig");
     _ = @import("ui/fonts.zig");
+    _ = @import("app/details.zig");
+    _ = @import("ui/table.zig");
     _ = @import("ui/icon.zig");
 }
 
@@ -671,4 +673,28 @@ test "with the sampler on its own thread, samples arrive and wake the view" {
     try std.testing.expect(state.sample.samples >= 2);
     try std.testing.expect(state.sample.procs_read);
     try std.testing.expect(state.proc_rows.len > 0);
+}
+
+test "Ctrl+I shows the selected process's details, its command line included" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.shortcut(.{ .key = '2', .cmd = true }));
+    t.settle(0.4);
+    const me = std.os.linux.getpid(); // this test: the one process sure to be ours
+    state.selected_proc = me;
+    try std.testing.expect(t.shortcut(.{ .key = 'i', .cmd = true }));
+    t.settle(0.4);
+    try std.testing.expect(state.details_open);
+    const d = state.sample.detail orelse return error.NoDetails;
+    try std.testing.expectEqual(me, d.pid);
+    try std.testing.expect(d.cmdline.len > 0);
+    try std.testing.expect(t.hasText("Command line"));
+    try std.testing.expect(t.hasText("Copy"));
+    try std.testing.expect(t.shortcut(.{ .key = 'i', .cmd = true }));
+    t.settle(0.2);
+    try std.testing.expect(!t.hasText("Command line"));
 }

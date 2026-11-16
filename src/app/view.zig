@@ -8,6 +8,7 @@ const apps_page = @import("../pages/apps/root.zig");
 const processes = @import("../pages/processes/root.zig");
 const confirm = @import("confirm.zig");
 const keys = @import("keys.zig");
+const details = @import("details.zig");
 const focus = @import("focus.zig");
 const shortcuts = @import("shortcuts.zig");
 const devices = @import("../pages/devices/root.zig");
@@ -56,6 +57,10 @@ pub fn view(s: *State, c: *ui.Context) void {
                 .cpu, .memory, .disk, .network => devices.page(c, s, k),
                 .settings => settings_page.page(c, s, k),
             }
+        }
+        if (s.details_open and s.onList()) {
+            _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = k.separator }, .none, null);
+            details.pane(c, s, k);
         }
         if (s.focus_content) {
             s.focus_content = false;

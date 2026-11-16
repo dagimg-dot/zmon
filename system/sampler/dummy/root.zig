@@ -87,3 +87,10 @@ pub const load = struct {
         return .{};
     }
 };
+
+pub const details = struct {
+    pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64) ?core.Details {
+        _ = .{ io, a, pid, start };
+        return null;
+    }
+};

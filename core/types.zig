@@ -14,7 +14,13 @@ pub const Proc = struct {
     comm: []const u8 = "",
     /// Path of the executable, or "" when it can't be read.
     exe: []const u8 = "",
+    /// The program it runs, by file name: the executable's, or the first
+    /// word of its command line when the executable can't be read. Tells
+    /// apart processes whose names say nothing ("MainThread" is node).
+    program: []const u8 = "",
     state: u8 = '?',
+    /// Scheduling priority, -20 (most favoured) to 19.
+    nice: i8 = 0,
     threads: u32 = 1,
     /// Memory that belongs to the process alone (resident minus shared), bytes.
     memory: u64 = 0,
@@ -27,6 +33,23 @@ pub const Proc = struct {
     /// Bytes a second since the last sample; only for processes whose
     /// I/O counters Linux lets us read (our own).
     disk_bps: f32 = 0,
+    io_known: bool = false,
+};
+
+/// What the details pane shows of one process beyond its row: read only for
+/// the selected process. Text belongs to whoever read it.
+pub const Details = struct {
+    pid: i32,
+    start: u64,
+    /// The whole command line, arguments separated by spaces. Shown on screen
+    /// only: never logged or saved.
+    cmdline: []const u8 = "",
+    /// The working folder: only the user's own processes say.
+    cwd: []const u8 = "",
+    /// Its control group (cgroup v2 path), which names its app or service.
+    cgroup: []const u8 = "",
+    read_total: u64 = 0,
+    write_total: u64 = 0,
     io_known: bool = false,
 };
 

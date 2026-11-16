@@ -17,6 +17,7 @@ pub const Stat = struct {
     stime: u64,
     threads: u32,
     start: u64,
+    nice: i8 = 0,
 };
 
 /// Parses /proc/<pid>/stat. The name is in parentheses and may itself contain
@@ -39,6 +40,7 @@ pub fn parseStat(text: []const u8) ?Stat {
         .utime = std.fmt.parseInt(u64, v[11], 10) catch 0,
         .stime = std.fmt.parseInt(u64, v[12], 10) catch 0,
         .threads = std.fmt.parseInt(u32, v[17], 10) catch 1,
+        .nice = std.fmt.parseInt(i8, v[16], 10) catch 0,
         .start = std.fmt.parseInt(u64, v[19], 10) catch 0,
     };
 }
@@ -56,6 +58,16 @@ pub fn displayName(comm: []const u8, exe: []const u8) []const u8 {
     const base = std.fs.path.basename(exe);
     if (base.len > comm.len and std.mem.startsWith(u8, base, comm)) return base;
     return comm;
+}
+
+/// The program a command line runs: its first word, by file name. A login
+/// shell's leading "-" goes, and so does what a process wrote over its own
+/// arguments after the name ("postgres: checkpointer" is postgres).
+pub fn programOf(cmdline: []const u8) []const u8 {
+    const first = std.mem.sliceTo(cmdline, 0);
+    var word = std.mem.trimStart(u8, first, "-");
+    if (std.mem.indexOfAny(u8, word, ": ")) |cut| word = word[0..cut];
+    return std.fs.path.basename(word);
 }
 
 pub const Signal = enum { quit, kill };
@@ -89,6 +101,8 @@ const Known = struct {
     uid: u32,
     /// Owned by the reader; "" when the link can't be read.
     exe: []const u8,
+    /// Owned by the reader; see `Proc.program`.
+    program: []const u8 = "",
     /// The scan that last met it.
     seen: u32,
     kthread: bool = false,
@@ -129,7 +143,10 @@ pub const Reader = struct {
 
     pub fn deinit(r: *Reader) void {
         var it = r.known.valueIterator();
-        while (it.next()) |k| r.gpa.free(k.exe);
+        while (it.next()) |k| {
+            r.gpa.free(k.exe);
+            r.gpa.free(k.program);
+        }
         r.known.deinit(r.gpa);
     }
 
@@ -165,9 +182,11 @@ pub const Reader = struct {
             var p: Proc = .{
                 .pid = pid,
                 .ppid = st.ppid,
-                .name = displayName(comm, known.exe),
+                .name = displayName(comm, if (known.exe.len > 0) known.exe else known.program),
                 .comm = comm,
                 .exe = known.exe,
+                .program = known.program,
+                .nice = st.nice,
                 .uid = known.uid,
                 .state = st.state,
                 .threads = st.threads,
@@ -220,6 +239,7 @@ pub const Reader = struct {
                 return slot.value_ptr;
             }
             r.gpa.free(slot.value_ptr.exe);
+            r.gpa.free(slot.value_ptr.program);
         }
         if (!kthread) {
             var path: [32]u8 = undefined;
@@ -231,6 +251,14 @@ pub const Reader = struct {
             if (files.link(io, dir, std.fmt.bufPrint(&path, "{d}/exe", .{pid}) catch "", &exe_buf)) |target| {
                 fresh.exe = r.gpa.dupe(u8, exePath(target)) catch "";
             }
+            // Another user's executable can't be read, but the command line can.
+            var program: []const u8 = std.fs.path.basename(fresh.exe);
+            if (program.len == 0) {
+                if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/cmdline", .{pid}) catch "", &buf)) |cmd| {
+                    program = programOf(cmd);
+                } else |_| {}
+            }
+            fresh.program = r.gpa.dupe(u8, program) catch "";
         }
         slot.value_ptr.* = fresh;
         return slot.value_ptr;
@@ -262,7 +290,10 @@ pub const Reader = struct {
                 n += 1;
                 if (n == gone.len) break;
             }
-            for (gone[0..n]) |pid| if (r.known.fetchRemove(pid)) |kv| r.gpa.free(kv.value.exe);
+            for (gone[0..n]) |pid| if (r.known.fetchRemove(pid)) |kv| {
+                r.gpa.free(kv.value.exe);
+                r.gpa.free(kv.value.program);
+            };
             if (n < gone.len) return;
         }
     }
@@ -297,6 +328,14 @@ test "an executable path keeps its own name and only loses a deleted marker" {
     try std.testing.expectEqualStrings("/usr/lib/xdg-desktop-portal", exePath("/usr/lib/xdg-desktop-portal"));
     try std.testing.expectEqualStrings("/usr/lib/systemd/systemd", exePath("/usr/lib/systemd/systemd"));
     try std.testing.expectEqualStrings("/usr/bin/node", exePath("/usr/bin/node (deleted)"));
+}
+
+test "a command line's program is its first word, by file name" {
+    try std.testing.expectEqualStrings("node", programOf("/usr/bin/node\x00server.js\x00--port\x003000\x00"));
+    try std.testing.expectEqualStrings("bash", programOf("-bash\x00"));
+    try std.testing.expectEqualStrings("postgres", programOf("postgres: checkpointer \x00\x00"));
+    try std.testing.expectEqualStrings("python3", programOf("python3 -m http.server"));
+    try std.testing.expectEqualStrings("", programOf(""));
 }
 
 test "displayName prefers the longer executable name" {

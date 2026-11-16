@@ -14,17 +14,20 @@ const controls = @import("../../ui/controls.zig");
 
 const State = app.State;
 
-const columns = [_]table.Column{
+const all_columns = [_]table.Column{
     .{ .title = "Name", .right = false },
     .{ .title = "CPU", .width = 76 },
     .{ .title = "Memory", .width = 96 },
-    .{ .title = "Disk", .width = 100 },
-    .{ .title = "Threads", .width = 68, .sorts = false },
+    .{ .title = "Disk", .width = 100, .drop = 1 },
+    .{ .title = "Threads", .width = 68, .sorts = false, .drop = 2 },
 };
+const Columns = @TypeOf(all_columns);
 const keys = [_]app.Sort{ .name, .cpu, .memory, .disk, .name };
 
 pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     toolbar(c, s, k);
+    var columns = all_columns;
+    table.fit(&columns, table.lastWidth(c, s.list_id));
     const sorted = std.mem.indexOfScalar(app.Sort, keys[0..4], s.app_order.key) orelse 0;
     if (table.header(c, k, &columns, sorted, s.app_order.ascending)) |i| s.sortBy(keys[i]);
     const list = table.box(c, "apps-list");
@@ -37,8 +40,8 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     var rows = table.list(c, s.app_rows.len, s.reveal);
     s.reveal = null;
     while (rows.next()) |i| switch (s.app_rows[i]) {
-        .group => |g| groupRow(c, s, k, s.groups[g], i),
-        .proc => |p| procRow(c, s, k, s.sample.procs[p], i),
+        .group => |g| groupRow(c, s, k, &columns, s.groups[g], i),
+        .proc => |p| procRow(c, s, k, &columns, s.sample.procs[p], i),
     };
     rows.end();
     if (s.pending_toggle) |root| {
@@ -53,13 +56,18 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
     defer bar.end();
     ui.text(c, "Apps", .{ .size = 18, .weight = .bold, .color = k.text });
     const n = s.appCount();
-    ui.text(c, c.print("{d} open", .{n}), .{ .size = 12.5, .color = k.secondary });
-    ui.spacer(c);
+    {
+        // The count gives way first when the toolbar is short of room.
+        const count = ui.div(c).row().grow().w(0).clip();
+        defer count.end();
+        ui.text(c, c.print("{d} open", .{n}), .{ .size = 12.5, .color = k.secondary });
+    }
     search(c, s);
+    if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I" })) s.details_open = !s.details_open;
     if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }
 
-fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize) void {
+fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, g: apps.Group, i: usize) void {
     ui.key(c, c.print("g{d}-{s}", .{ g.root, g.name }));
     const open = s.expanded.contains(g.root);
     const sel = s.selected_app == g.root;
@@ -95,7 +103,7 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
     table.metrics(c, columns[1..], ink, m);
 }
 
-fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, i: usize) void {
+fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, p: core.Proc, i: usize) void {
     ui.key(c, c.print("p{d}", .{p.pid}));
     const sel = s.selected_app == p.pid;
     const r = table.row(c, k, i, sel);
@@ -111,7 +119,7 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, i: usize) v
     {
         const name = table.cell(c, columns[0], table.row_h).gap(6).pl(46);
         defer name.end();
-        ui.text(c, p.name, .{ .size = 13, .color = ink.text });
+        table.processName(c, ink, p.name, p.program, false);
         ui.text(c, c.print("{d}", .{p.pid}), .{ .size = 11.5, .color = ink.faint });
     }
     table.metrics(c, columns[1..], ink, m);

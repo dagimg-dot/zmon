@@ -12,7 +12,7 @@ const apps = system.apps;
 
 /// The page shown: the apps, every process, one device's page, or Settings.
 pub const Page = enum { apps, processes, cpu, memory, disk, network, settings };
-pub const Sort = enum { name, pid, cpu, memory, disk };
+pub const Sort = enum { name, user, pid, cpu, memory, disk };
 
 /// How a list is sorted.
 pub const Order = struct {
@@ -42,6 +42,10 @@ const QuitWatch = struct {
 
 pub const State = struct {
     gpa: std.mem.Allocator,
+    /// Account names, for the User column.
+    users: system.users.Users,
+    /// The details pane is open beside the list.
+    details_open: bool = false,
     /// Samples the machine, on its own thread once `startSampling` runs.
     worker: *system.sampler.Worker,
     /// The sample the pages show: the worker's, read-only, until the next one.
@@ -125,6 +129,7 @@ pub const State = struct {
             .gpa = gpa,
             .io = io,
             .worker = undefined,
+            .users = .init(gpa, io),
             .sample = undefined,
             .index = .init(gpa),
             .icons = .init(gpa, io),
@@ -217,6 +222,7 @@ pub const State = struct {
         s.icons.deinit();
         s.index.deinit();
         s.worker.destroy();
+        s.users.deinit();
     }
 
     /// Samples on the worker's own thread from now on; `waker` asks the
@@ -230,18 +236,25 @@ pub const State = struct {
     /// the view should look again.
     pub fn tick(s: *State, now: f64) f32 {
         // The process list is read only while something shows or watches it.
-        const want: system.sampler.Want = .{
+        var want: system.sampler.Want = .{
             .procs = s.onList() or s.confirm or s.quit_watch != null,
             .kernel_threads = s.settings.show_kernel_threads,
         };
-        // Opening a list reads it at once rather than at the next second.
+        if (s.detailTarget()) |d| {
+            want.detail_pid = d.pid;
+            want.detail_start = d.start;
+        }
+        // Opening a list, or selecting another process with the details
+        // open, reads at once rather than at the next second.
         const stale = want.procs and !s.sample.procs_read;
         const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads;
-        s.worker.ask(want, stale and changed);
+        const new_detail = want.detail_pid != s.asked.detail_pid or want.detail_start != s.asked.detail_start;
+        s.worker.ask(want, (stale and changed) or (new_detail and want.detail_pid != 0));
         s.asked = want;
         var wait: f64 = 1.0; // a sample wakes the view itself; this is a fallback
         if (!s.worker.running()) {
-            if (s.sample.samples == 0 or now >= s.next_sample or stale) {
+            const detail_due = want.detail_pid != 0 and new_detail;
+            if (s.sample.samples == 0 or now >= s.next_sample or stale or detail_due) {
                 s.worker.step(); // `now` only schedules: rates use the machine's clock
                 // On the second, not a second after each late frame; soon when the
                 // sample has nothing to measure rates against; after a stall, from now.
@@ -293,7 +306,7 @@ pub const State = struct {
         o: Order,
         fn key(c: GroupOrder, g: apps.Group) f64 {
             return switch (c.o.key) {
-                .name => 0,
+                .name, .user => 0,
                 .pid => @floatFromInt(g.root),
                 .cpu => g.cpu,
                 .memory => @floatFromInt(g.memory),
@@ -316,9 +329,10 @@ pub const State = struct {
     const ProcOrder = struct {
         o: Order,
         procs: []const core.Proc,
+        users: *const system.users.Users,
         fn key(c: ProcOrder, p: core.Proc) f64 {
             return switch (c.o.key) {
-                .name => 0,
+                .name, .user => 0,
                 .pid => @floatFromInt(p.pid),
                 .cpu => p.cpu,
                 .memory => @floatFromInt(p.memory),
@@ -328,9 +342,11 @@ pub const State = struct {
         fn less(c: ProcOrder, xi: u32, yi: u32) bool {
             const x = c.procs[xi];
             const y = c.procs[yi];
-            if (c.o.key == .name) {
-                if (!std.ascii.eqlIgnoreCase(x.name, y.name)) {
-                    const lt = std.ascii.lessThanIgnoreCase(x.name, y.name);
+            if (c.o.key == .name or c.o.key == .user) {
+                const nx = if (c.o.key == .name) x.name else c.users.name(x.uid) orelse "";
+                const ny = if (c.o.key == .name) y.name else c.users.name(y.uid) orelse "";
+                if (!std.ascii.eqlIgnoreCase(nx, ny)) {
+                    const lt = std.ascii.lessThanIgnoreCase(nx, ny);
                     return if (c.o.ascending) lt else !lt;
                 }
                 return x.pid < y.pid;
@@ -372,7 +388,7 @@ pub const State = struct {
             if (!core.search.matches(p, s.search.text())) continue;
             try rows.append(a, @intCast(i));
         }
-        std.mem.sort(u32, rows.items, ProcOrder{ .o = s.proc_order, .procs = procs }, ProcOrder.less);
+        std.mem.sort(u32, rows.items, ProcOrder{ .o = s.proc_order, .procs = procs, .users = &s.users }, ProcOrder.less);
         return rows.items;
     }
 
@@ -387,7 +403,7 @@ pub const State = struct {
         if (o.key == key) {
             o.ascending = !o.ascending;
         } else {
-            o.* = .{ .key = key, .ascending = key == .name or key == .pid };
+            o.* = .{ .key = key, .ascending = key == .name or key == .user or key == .pid };
         }
         s.rebuild();
     }
@@ -511,6 +527,20 @@ pub const State = struct {
     pub fn askEndTask(s: *State, force: bool) void {
         if (s.target() == null) return;
         if (s.settings.confirm_end_task) s.confirm = true else s.endTask(force);
+    }
+
+    /// The process the details pane describes: the selection on a list page,
+    /// an app by the process it hangs from.
+    pub fn detailTarget(s: *const State) ?struct { pid: i32, start: u64 } {
+        if (!s.details_open or !s.onList()) return null;
+        const pid = s.selected();
+        const p = s.sample.find(pid) orelse return null;
+        return .{ .pid = pid, .start = p.start };
+    }
+
+    /// The name of the account `uid`, or its number when it has none.
+    pub fn userName(s: *const State, buf: []u8, uid: u32) []const u8 {
+        return s.users.name(uid) orelse std.fmt.bufPrint(buf, "{d}", .{uid}) catch "";
     }
 
     /// The pid selected on the page shown.
