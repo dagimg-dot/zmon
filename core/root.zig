@@ -15,4 +15,6 @@ test {
     _ = ring;
     _ = fmt;
     _ = text;
+    _ = @import("theme/color.zig");
+    _ = @import("theme/toml.zig");
 }
