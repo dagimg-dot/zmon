@@ -17,6 +17,11 @@ pub fn saveSettings(io: std.Io, at: config.Location, s: *const core.settings.Set
     _ = .{ io, at, s };
 }
 
+pub fn makeThemesFolder(io: std.Io, at: config.Location) bool {
+    _ = .{ io, at };
+    return false;
+}
+
 pub fn userThemes(io: std.Io, a: std.mem.Allocator, at: config.Location) []config.UserTheme {
     _ = .{ io, a, at };
     return &.{};

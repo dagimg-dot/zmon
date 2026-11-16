@@ -36,6 +36,11 @@ pub fn saveSettings(io: std.Io, at: Location, s: *const core.settings.Settings) 
     return platform.saveSettings(io, at, s);
 }
 
+/// Makes sure the theme folder exists, so it can be opened; false when it can't be made.
+pub fn makeThemesFolder(io: std.Io, at: Location) bool {
+    return platform.makeThemesFolder(io, at);
+}
+
 /// Every theme file in the user's theme folder, read into `a`.
 pub fn userThemes(io: std.Io, a: std.mem.Allocator, at: Location) []UserTheme {
     return platform.userThemes(io, a, at);

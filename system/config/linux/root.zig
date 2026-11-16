@@ -35,12 +35,25 @@ pub fn saveSettings(io: std.Io, at: config.Location, s: *const core.settings.Set
     try s.write(&w);
     const cwd = std.Io.Dir.cwd();
     try cwd.createDirPath(io, at.dir);
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var link_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var target_buf: [std.fs.max_path_bytes]u8 = undefined;
     var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var final_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}/{s}.new", .{ at.dir, settings_file });
-    const final = try std.fmt.bufPrint(&final_buf, "{s}/{s}", .{ at.dir, settings_file });
+    const path = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ at.dir, settings_file });
+    // A settings file linked from elsewhere (a dotfiles folder) is written
+    // where it lives, so the link stays a link.
+    const final = if (cwd.readLink(io, path, &link_buf)) |n| blk: {
+        const link = link_buf[0..n];
+        break :blk if (std.fs.path.isAbsolute(link)) link else try std.fmt.bufPrint(&target_buf, "{s}/{s}", .{ at.dir, link });
+    } else |_| path;
+    const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}.new", .{final});
     try cwd.writeFile(io, .{ .sub_path = tmp, .data = w.buffered() });
     try std.Io.Dir.rename(cwd, tmp, cwd, final, io);
+}
+
+pub fn makeThemesFolder(io: std.Io, at: config.Location) bool {
+    std.Io.Dir.cwd().createDirPath(io, at.themes) catch return false;
+    return true;
 }
 
 pub fn userThemes(io: std.Io, a: std.mem.Allocator, at: config.Location) []config.UserTheme {
@@ -87,6 +100,27 @@ test "settings saved are the settings loaded, and nothing saved means the defaul
     const after = loadSettings(io, a, at);
     try std.testing.expectEqual(core.settings.Appearance.dark, after.appearance);
     try std.testing.expectEqualStrings("nord-light", after.light_theme.slice());
+}
+
+test "a linked settings file is saved through the link, which stays a link" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const at = try tmpLocation(a, &tmp);
+    try tmp.dir.createDirPath(io, "dotfiles");
+    try tmp.dir.writeFile(io, .{ .sub_path = "dotfiles/zmon.toml", .data = "" });
+    try tmp.dir.createDirPath(io, "config/zmon");
+    try tmp.dir.symLink(io, "../../dotfiles/zmon.toml", "config/zmon/" ++ settings_file, .{});
+    var s: core.settings.Settings = .{ .appearance = .dark };
+    try saveSettings(io, at, &s);
+    var buf: [256]u8 = undefined;
+    _ = try tmp.dir.readLink(io, "config/zmon/" ++ settings_file, &buf);
+    const saved = try tmp.dir.readFileAlloc(io, "dotfiles/zmon.toml", a, .limited(4096));
+    try std.testing.expect(std.mem.indexOf(u8, saved, "mode = \"dark\"") != null);
+    try std.testing.expectEqual(core.settings.Appearance.dark, loadSettings(io, a, at).appearance);
 }
 
 test "user themes are the folder's .toml files with sound names" {
