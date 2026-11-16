@@ -10,18 +10,18 @@ pub const panic = nanoui.panic;
 pub const std_options = nanoui.std_options;
 pub const std_options_debug_threaded_io = nanoui.std_options_debug_threaded_io;
 
-pub fn main(init: nanoui.Init) void {
-    _ = fonts.register();
-    const app = nanoui.App.create(init, .{ .name = "zmon" }) catch return;
+pub fn main(init: nanoui.Init) !void {
+    if (!fonts.register()) std.log.warn("couldn't load the bundled Lexend font; using the system's", .{});
+    const app = try nanoui.App.create(init, .{ .name = "zmon" });
     defer app.destroy();
     var state: app_state.State = .init(init.gpa, init.io);
     defer state.deinit();
-    _ = app.newWindow(.{
+    _ = try app.newWindow(.{
         .title = "zmon",
         .width = 1180,
         .height = 760,
         .theme = theme.theme(nanoui.isDark()),
         .content = .{ .view = .init(&state, app_view.view) },
-    }) catch return;
-    app.run() catch return;
+    });
+    try app.run();
 }
