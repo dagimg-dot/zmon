@@ -80,9 +80,10 @@ pub const Index = struct {
         for ([_][]const u8{ if (web_app) "" else e.program, e.wm_class, e.id }) |key| {
             if (key.len == 0) continue;
             const lower = std.ascii.allocLowerString(a, key) catch continue;
-            // The first entry to claim a name keeps it.
+            // The first entry to claim a name keeps it, unless that one is hidden
+            // and this one is not: a URL handler must not stand for the app itself.
             const slot = ix.by_key.getOrPut(a, lower) catch continue;
-            if (!slot.found_existing) slot.value_ptr.* = at;
+            if (!slot.found_existing or (ix.entries.items[slot.value_ptr.*].hidden and !e.hidden)) slot.value_ptr.* = at;
         }
     }
 
@@ -224,6 +225,20 @@ test "a web app launcher does not take the browser's name" {
     ix.add("brave-browser", "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave %U\n");
     try std.testing.expectEqualStrings("Brave", ix.lookup("brave").?.name);
     try std.testing.expectEqualStrings("Google Keep", ix.lookup("crx_abc").?.name);
+}
+
+test "a visible launcher beats a hidden one that runs the same program, whatever order they load in" {
+    const hidden = "[Desktop Entry]\nType=Application\nName=VSCodium - URL Handler\nExec=/usr/bin/codium --open-url %U\nNoDisplay=true\n";
+    const visible = "[Desktop Entry]\nType=Application\nName=VSCodium\nExec=/usr/bin/codium %F\nStartupWMClass=VSCodium\n";
+    for ([_][2][]const u8{ .{ hidden, visible }, .{ visible, hidden } }) |pair| {
+        var ix = Index.init(std.testing.allocator);
+        defer ix.deinit();
+        ix.add("one", pair[0]);
+        ix.add("two", pair[1]);
+        const e = ix.lookup("codium").?;
+        try std.testing.expectEqualStrings("VSCodium", e.name);
+        try std.testing.expect(!e.hidden);
+    }
 }
 
 test "the first entry to claim a name keeps it, so the user's own wins" {
