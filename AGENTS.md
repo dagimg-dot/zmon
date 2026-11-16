@@ -8,13 +8,13 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 - **Zig 0.17.0 only.** The global `zig` may point at another version, so check `zig version` and use `~/.zvm/0.17.0/zig` when they differ. Other projects here still use 0.16.
 - **nanoui** (github.com/justrach/nanoui) draws everything: flexbox layout, immediate-mode views, a CPU or OpenGL renderer inside GTK. It is pinned by release in `build.zig.zon`. While nanoui is 0.x a minor release may change its API, so bump it on purpose and rerun the tests.
-- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc. Ask before adding anything else, SQLite for history included.
+- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the one bundled asset is the Lexend font. Ask before adding anything else, SQLite for history included.
 - **`nui`** is nanoui's tool for checking an app without opening a window. It is built from a nanoui checkout with `zig build nui`. On this machine: `~/JDrive/Projects/rando/nanoui-src/nanoui/zig-out/bin/nui`.
 
 ## Rules
 
 - **Layering.**
-  - Imports go one way: `procfs`, `sampler` and `apps` (data, no nanoui), then `app.zig` (state and the sampling clock), then the `*_view.zig` pages, with `fmt`, `theme` and `charts` as shared helpers.
+  - Imports go one way: `procfs`, `sampler`, `xdg`, `desktop`, `apps` and `icons` (data, no nanoui), then `app.zig` (state and the sampling clock), then the `*_view.zig` pages, with `fmt`, `theme` and `charts` as shared helpers.
   - Data modules never import nanoui. A page never reads `/proc`.
   - Logic goes in the layer that owns it, never in `main.zig`.
 - **Views.**
@@ -24,6 +24,7 @@ Systo has no license. Read it for what the product does, never copy or translate
 - **Frame memory.**
   - Text handed to `ui.text` is drawn after the function returns, so it must outlive it. Format with `c.print`, or copy a stack buffer with `fmt.own(c.alloc(), ...)`.
   - Never keep a slice into a buffer that is read again. Copy names out of the read buffer at once.
+  - nanoui draws images from the caller's memory, so icon bytes live in the `icons` cache for the whole run.
 - **Reading /proc.**
   - Go through `procfs.read`. It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
   - A process that vanishes or hides its files is skipped, never an error.
@@ -34,6 +35,7 @@ Systo has no license. Read it for what the product does, never copy or translate
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
   - Ask before adding anything that signals other users' processes or needs privilege.
 - **Look.**
+  - One typeface: Lexend, bundled in `src/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. Glyphs it lacks fall back to the system's fonts.
   - Every colour comes from `theme.zig`, which is monochrome: emphasis is weight and contrast, not hue. No raw hex colours in a page.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.
 - **Privacy.** Never log or persist process command lines or environments.
