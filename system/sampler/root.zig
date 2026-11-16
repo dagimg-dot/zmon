@@ -182,8 +182,17 @@ test "a share of the ticks between two reads is a percentage" {
     try std.testing.expectApproxEqAbs(@as(f32, 1000), rate(2000, 1000, 1.0), 0.001);
 }
 
-test {
-    _ = backend;
+// Zig only analyses what is referenced, so this is what makes a cross-compile
+// check look inside a backend the host never calls.
+test "the sampler and its backend compile on every OS" {
+    std.testing.refAllDecls(backend);
+    std.testing.refAllDecls(backend.process.Reader);
+    std.testing.refAllDecls(backend.cpu);
+    std.testing.refAllDecls(backend.memory);
+    std.testing.refAllDecls(backend.disk);
+    std.testing.refAllDecls(backend.network);
+    std.testing.refAllDecls(backend.load);
+    std.testing.refAllDecls(Sampler);
 }
 
 test "the live machine: this test process is found, and the totals are sane" {

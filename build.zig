@@ -63,7 +63,24 @@ pub fn build(b: *std.Build) void {
         .paths = &.{ b.path("build.zig"), b.path("build.zig.zon"), b.path("core"), b.path("system"), b.path("src") },
         .check = true,
     });
-    const check = b.step("check", "Check formatting and build everything");
+    const check = b.step("check", "Check formatting, build everything and compile-check macOS");
     check.dependOn(&fmt.step);
     check.dependOn(&exe.step);
+
+    // `zig build check-cross`: the data layers compiled for macOS, where they take the
+    // dummy backends. The tests are built, not run, so a type error or a bad
+    // `switch (builtin.os.tag)` arm in code that Linux never reaches still fails here.
+    const mac = b.resolveTargetQuery(.{ .cpu_arch = .aarch64, .os_tag = .macos });
+    const core_mac = b.createModule(.{ .root_source_file = b.path("core/root.zig"), .target = mac, .optimize = optimize });
+    const system_mac = b.createModule(.{
+        .root_source_file = b.path("system/root.zig"),
+        .target = mac,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{.{ .name = "zmon-core", .module = core_mac }},
+    });
+    const cross = b.step("check-cross", "Compile-check the data layers for macOS");
+    cross.dependOn(&b.addTest(.{ .root_module = core_mac }).step);
+    cross.dependOn(&b.addTest(.{ .root_module = system_mac }).step);
+    check.dependOn(cross);
 }
