@@ -2,12 +2,14 @@
 const std = @import("std");
 const nanoui = @import("nanoui");
 const app_view = @import("app.zig");
+const fonts = @import("fonts.zig");
 
 pub const panic = nanoui.panic;
 pub const std_options = nanoui.std_options;
 pub const std_options_debug_threaded_io = nanoui.std_options_debug_threaded_io;
 
 pub fn main(init: nanoui.Init) void {
+    _ = fonts.register();
     const app = nanoui.App.create(init, .{ .name = "zmon" }) catch return;
     defer app.destroy();
     var state: app_view.State = .init(init.gpa, init.io);

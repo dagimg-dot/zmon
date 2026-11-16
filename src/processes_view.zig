@@ -176,7 +176,7 @@ fn values(c: *ui.Context, ink: ui.Color, faint: ui.Color, cpu: f32, memory: u64,
 fn num(c: *ui.Context, col: Column, text: []const u8, color: ui.Color, strong: bool) void {
     const d = cell(c, col, row_h);
     defer d.end();
-    ui.text(c, text, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = color, .mono = true });
+    ui.text(c, text, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = color });
 }
 
 pub fn confirmDialog(c: *ui.Context, s: *State, k: theme.Colors) void {

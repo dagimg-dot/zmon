@@ -15,6 +15,7 @@ test {
     _ = @import("fmt.zig");
     _ = @import("charts.zig");
     _ = @import("theme.zig");
+    _ = @import("fonts.zig");
 }
 
 fn tester(t: *ui.Tester, state: *app_view.State) !void {

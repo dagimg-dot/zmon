@@ -4,6 +4,7 @@
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const Color = ui.Color;
+const fonts = @import("fonts.zig");
 
 pub const Colors = struct {
     page: Color,
@@ -61,5 +62,7 @@ pub fn theme(dark: bool) ui.Theme {
     t.accent_hover = k.selected.alpha(0.85);
     t.accent_text = k.selected_text;
     t.danger = k.danger;
+    t.font = fonts.family;
+    t.mono_font = fonts.family;
     return t;
 }
