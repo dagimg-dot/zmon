@@ -1,7 +1,8 @@
 //! zmon: a system monitor, in Zig, drawn by nanoui.
 const std = @import("std");
 const nanoui = @import("nanoui");
-const app_view = @import("app.zig");
+const app_state = @import("app/state.zig");
+const app_view = @import("app/view.zig");
 const fonts = @import("ui/fonts.zig");
 const theme = @import("ui/theme.zig");
 
@@ -13,14 +14,14 @@ pub fn main(init: nanoui.Init) void {
     _ = fonts.register();
     const app = nanoui.App.create(init, .{ .name = "zmon" }) catch return;
     defer app.destroy();
-    var state: app_view.State = .init(init.gpa, init.io);
+    var state: app_state.State = .init(init.gpa, init.io);
     defer state.deinit();
     _ = app.newWindow(.{
         .title = "zmon",
         .width = 1180,
         .height = 760,
         .theme = theme.theme(nanoui.isDark()),
-        .content = .{ .view = .init(&state, app_view.State.view) },
+        .content = .{ .view = .init(&state, app_view.view) },
     }) catch return;
     app.run() catch return;
 }
