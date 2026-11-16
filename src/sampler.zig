@@ -4,43 +4,14 @@
 //! A short history of the totals is kept for the charts.
 const std = @import("std");
 const procfs = @import("procfs.zig");
+const core = @import("zmon-core");
+
+pub const Proc = core.Proc;
+pub const Memory = core.Memory;
+pub const Ring = core.Ring;
+pub const history_len = core.history_len;
 
 extern "c" fn sysconf(name: c_int) c_long;
-
-pub const history_len = 300;
-
-/// A fixed-size history, newest last.
-pub fn Ring(comptime T: type) type {
-    return struct {
-        const Self = @This();
-        items: [history_len]T = @splat(0),
-        len: usize = 0,
-        next: usize = 0,
-
-        pub fn push(r: *Self, v: T) void {
-            r.items[r.next] = v;
-            r.next = (r.next + 1) % history_len;
-            if (r.len < history_len) r.len += 1;
-        }
-
-        /// The `i`-th oldest value; 0 is the oldest still kept.
-        pub fn at(r: *const Self, i: usize) T {
-            const start = (r.next + history_len - r.len) % history_len;
-            return r.items[(start + i) % history_len];
-        }
-
-        pub fn max(r: *const Self) T {
-            return r.maxOfNewest(r.len);
-        }
-
-        /// The largest of the `n` newest values.
-        pub fn maxOfNewest(r: *const Self, n: usize) T {
-            var m: T = 0;
-            for (r.len -| n..r.len) |i| m = @max(m, r.at(i));
-            return m;
-        }
-    };
-}
 
 pub const History = struct {
     cpu: Ring(f32) = .{},
@@ -49,49 +20,6 @@ pub const History = struct {
     disk_write: Ring(f32) = .{},
     net_in: Ring(f32) = .{},
     net_out: Ring(f32) = .{},
-};
-
-pub const Proc = struct {
-    pid: i32,
-    ppid: i32,
-    uid: u32 = 0,
-    /// A kernel thread: no executable, no memory of its own.
-    kthread: bool = false,
-    /// Display name: the kernel's 15-character name, or the executable's
-    /// when that is the longer form of it.
-    name: []const u8,
-    /// Path of the executable, or "" when it can't be read.
-    exe: []const u8 = "",
-    state: u8 = '?',
-    threads: u32 = 1,
-    /// Memory that belongs to the process alone (resident minus shared), bytes.
-    memory: u64 = 0,
-    /// Percent of one core since the last sample, so it can pass 100.
-    cpu: f32 = 0,
-    cpu_ticks: u64 = 0,
-    start: u64 = 0,
-    disk_read: u64 = 0,
-    disk_write: u64 = 0,
-    /// Bytes a second since the last sample; only for processes whose
-    /// I/O counters Linux lets us read (our own).
-    disk_bps: f32 = 0,
-    io_known: bool = false,
-};
-
-pub const Memory = struct {
-    total: u64 = 0,
-    available: u64 = 0,
-    cached: u64 = 0,
-    shmem: u64 = 0,
-    swap_total: u64 = 0,
-    swap_free: u64 = 0,
-
-    pub fn used(m: Memory) u64 {
-        return m.total -| m.available;
-    }
-    pub fn swapUsed(m: Memory) u64 {
-        return m.swap_total -| m.swap_free;
-    }
 };
 
 const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
@@ -519,14 +447,6 @@ test "network: loopback is left out" {
     const n = parseNetDev(text);
     try std.testing.expectEqual(@as(u64, 1000), n[0]);
     try std.testing.expectEqual(@as(u64, 500), n[1]);
-}
-
-test "ring keeps the newest values in order" {
-    var r: Ring(f32) = .{};
-    for (0..history_len + 5) |i| r.push(@floatFromInt(i));
-    try std.testing.expectEqual(@as(usize, history_len), r.len);
-    try std.testing.expectEqual(@as(f32, 5), r.at(0));
-    try std.testing.expectEqual(@as(f32, history_len + 4), r.at(history_len - 1));
 }
 
 test "the live machine: this test process is found, and the totals are sane" {

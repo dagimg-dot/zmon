@@ -3,7 +3,7 @@
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
-const sampler = @import("sampler.zig");
+const core = @import("zmon-core");
 
 pub const Options = struct {
     height: f32 = 160,
@@ -13,7 +13,7 @@ pub const Options = struct {
     color: ui.Color,
     grid: ui.Color,
     /// A second history drawn over the first (writes over reads, upload over download).
-    second: ?*const sampler.Ring(f32) = null,
+    second: ?*const core.Ring(f32) = null,
     grid_lines: u32 = 4,
     /// How many of the newest samples the chart spans (one a second).
     window: usize = 60,
@@ -21,13 +21,13 @@ pub const Options = struct {
 
 /// The top of a chart for these histories: the largest value with headroom,
 /// never below `floor`.
-pub fn scale(a: *const sampler.Ring(f32), b: ?*const sampler.Ring(f32), floor: f32, window: usize) f32 {
+pub fn scale(a: *const core.Ring(f32), b: ?*const core.Ring(f32), floor: f32, window: usize) f32 {
     var m = a.maxOfNewest(window);
     if (b) |r| m = @max(m, r.maxOfNewest(window));
     return @max(floor, m * 1.15);
 }
 
-pub fn area(c: *ui.Context, ring: *const sampler.Ring(f32), o: Options) void {
+pub fn area(c: *ui.Context, ring: *const core.Ring(f32), o: Options) void {
     const cv = ui.canvas(c, .{ .width = .fill, .height = .{ .px = o.height } });
     const w = cv.size.w;
     const h = cv.size.h;
@@ -43,7 +43,7 @@ pub fn area(c: *ui.Context, ring: *const sampler.Ring(f32), o: Options) void {
     if (o.second) |r| series(c, cv, r, o.window, w, h, top, o.color.alpha(0.55), false);
 }
 
-fn series(c: *ui.Context, cv: *ui.Canvas, ring: *const sampler.Ring(f32), window: usize, w: f32, h: f32, top: f32, color: ui.Color, fill: bool) void {
+fn series(c: *ui.Context, cv: *ui.Canvas, ring: *const core.Ring(f32), window: usize, w: f32, h: f32, top: f32, color: ui.Color, fill: bool) void {
     const n = @min(ring.len, window);
     if (n < 2) return;
     const first = ring.len - n;
@@ -65,6 +65,6 @@ fn series(c: *ui.Context, cv: *ui.Canvas, ring: *const sampler.Ring(f32), window
 }
 
 /// A small chart for a tile: no gridlines, no second series.
-pub fn spark(c: *ui.Context, ring: *const sampler.Ring(f32), height: f32, max: ?f32, color: ui.Color) void {
+pub fn spark(c: *ui.Context, ring: *const core.Ring(f32), height: f32, max: ?f32, color: ui.Color) void {
     area(c, ring, .{ .height = height, .max = max, .color = color, .grid = .hex(0x00000000), .grid_lines = 0 });
 }

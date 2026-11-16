@@ -5,8 +5,8 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const app = @import("app.zig");
 const charts = @import("charts.zig");
-const fmt = @import("fmt.zig");
-const sampler = @import("sampler.zig");
+const core = @import("zmon-core");
+const fmt = core.fmt;
 const theme = @import("theme.zig");
 
 const State = app.State;
@@ -32,7 +32,7 @@ fn rail(c: *ui.Context, s: *State, k: theme.Colors) void {
     tile(c, s, k, .network, "Network", c.print("↓ {s}  ↑ {s}", .{ fmt.rate(&b[0], s.sampler.net_in_bps), fmt.rate(&b[1], s.sampler.net_out_bps) }), &h.net_in, null);
 }
 
-fn tile(c: *ui.Context, s: *State, k: theme.Colors, res: app.Resource, title: []const u8, value: []const u8, ring: *const sampler.Ring(f32), max: ?f32) void {
+fn tile(c: *ui.Context, s: *State, k: theme.Colors, res: app.Resource, title: []const u8, value: []const u8, ring: *const core.Ring(f32), max: ?f32) void {
     ui.key(c, title);
     const on = s.resource == res;
     const box = ui.div(c).column().wFull().p(12).gap(6).rounded(10).control();

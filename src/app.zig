@@ -6,6 +6,7 @@ const linux = std.os.linux;
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const kit = nanoui.kit;
+const core = @import("zmon-core");
 const sampler = @import("sampler.zig");
 const apps = @import("apps.zig");
 const icons = @import("icons.zig");
@@ -253,7 +254,7 @@ fn sidebar(c: *ui.Context, s: *State, k: theme.Colors) void {
     var b1: [24]u8 = undefined;
     var b2: [24]u8 = undefined;
     ui.text(c, c.print("{s} CPU   {s} RAM", .{
-        @import("fmt.zig").percent(&b1, s.sampler.cpu_pct),
-        @import("fmt.zig").percent(&b2, if (s.sampler.memory.total > 0) @as(f32, @floatFromInt(s.sampler.memory.used())) * 100 / @as(f32, @floatFromInt(s.sampler.memory.total)) else 0),
+        core.fmt.percent(&b1, s.sampler.cpu_pct),
+        core.fmt.percent(&b2, if (s.sampler.memory.total > 0) @as(f32, @floatFromInt(s.sampler.memory.used())) * 100 / @as(f32, @floatFromInt(s.sampler.memory.total)) else 0),
     }), .{ .size = 11.5, .color = k.tertiary });
 }

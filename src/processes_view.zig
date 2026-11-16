@@ -7,7 +7,8 @@ const ui = nanoui.ui;
 const kit = nanoui.kit;
 const app = @import("app.zig");
 const apps = @import("apps.zig");
-const fmt = @import("fmt.zig");
+const core = @import("zmon-core");
+const fmt = core.fmt;
 const theme = @import("theme.zig");
 
 const State = app.State;
@@ -141,7 +142,7 @@ fn appIcon(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group) void {
     }
 }
 
-fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: @import("sampler.zig").Proc, i: usize) void {
+fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, i: usize) void {
     ui.key(c, c.print("p{d}", .{p.pid}));
     const sel = s.selected == p.pid;
     const r = ui.div(c).row().wFull().h(row_h).px(pad).itemsCenter();
