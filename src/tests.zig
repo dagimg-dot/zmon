@@ -23,4 +23,5 @@ test "Increment counts up; Reset goes back to 0" {
 test {
     _ = @import("procfs.zig");
     _ = @import("sampler.zig");
+    _ = @import("apps.zig");
 }
