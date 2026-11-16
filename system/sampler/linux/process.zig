@@ -80,49 +80,73 @@ pub fn signal(io: std.Io, pid: i32, start: u64, sig: Signal) bool {
     return linux.errno(linux.kill(pid, if (sig == .kill) .KILL else .TERM)) == .SUCCESS;
 }
 
-/// Walks /proc. It remembers who owns each process, which can't change while
-/// the process lives, so /proc/<pid>/status is read once per process.
+/// What doesn't change while a process runs one program: who owns it and which
+/// executable it is. A pid keeps its start time across exec, so the kernel name
+/// is part of the key too.
+const Known = struct {
+    start: u64,
+    comm: u64,
+    uid: u32,
+    /// Owned by the reader; "" when the link can't be read.
+    exe: []const u8,
+    /// The scan that last met it.
+    seen: u32,
+};
+
+/// Walks /proc. Owner and executable are read once per process and remembered,
+/// so a steady machine costs three small reads per process a sample: stat,
+/// statm, and io for the user's own processes (the kernel refuses the rest).
 pub const Reader = struct {
     gpa: std.mem.Allocator,
     page: u64,
-    uids: std.AutoHashMapUnmanaged(i32, struct { start: u64, uid: u32 }) = .empty,
+    me: u32,
+    known: std.AutoHashMapUnmanaged(i32, Known) = .empty,
+    scans: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) Reader {
-        return .{ .gpa = gpa, .page = units.pageSize() };
+        return .{ .gpa = gpa, .page = units.pageSize(), .me = currentUid() };
     }
 
     pub fn deinit(r: *Reader) void {
-        r.uids.deinit(r.gpa);
+        var it = r.known.valueIterator();
+        while (it.next()) |k| r.gpa.free(k.exe);
+        r.known.deinit(r.gpa);
     }
 
-    /// Appends every process to `out`; names and paths are copied into `a`.
+    /// Appends every process to `out`; names are copied into `a`. Executable
+    /// paths belong to the reader and last as long as their process.
     pub fn scan(r: *Reader, io: std.Io, a: std.mem.Allocator, out: *std.ArrayList(Proc)) void {
+        r.scans +%= 1;
+        defer r.forget();
         var dir = std.Io.Dir.cwd().openDir(io, "/proc", .{ .iterate = true }) catch return;
         defer dir.close(io);
         var it = dir.iterate();
         var buf: [4096]u8 = undefined;
         var path: [64]u8 = undefined;
-        var exe_buf: [512]u8 = undefined;
         while (it.next(io) catch null) |entry| {
             const pid = std.fmt.parseInt(i32, entry.name, 10) catch continue;
             const stat_text = files.read(io, dir, std.fmt.bufPrint(&path, "{d}/stat", .{pid}) catch continue, &buf) catch continue;
             const st = parseStat(stat_text) orelse continue;
+            const kthread = st.flags & pf_kthread != 0;
+            const known = r.knownFor(io, dir, pid, st, kthread);
 
             // The name points into `buf`, which the next reads reuse: keep a copy.
             const comm = a.dupe(u8, st.comm) catch continue;
             var p: Proc = .{
                 .pid = pid,
                 .ppid = st.ppid,
-                .name = "",
+                .name = displayName(comm, known.exe),
                 .comm = comm,
+                .exe = known.exe,
+                .uid = known.uid,
                 .state = st.state,
                 .threads = st.threads,
-                .kthread = st.flags & pf_kthread != 0,
+                .kthread = kthread,
                 .cpu_ticks = st.utime + st.stime,
                 .start = st.start,
             };
 
-            if (!p.kthread) {
+            if (!kthread) {
                 if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/statm", .{pid}) catch continue, &buf)) |statm| {
                     var f = std.mem.tokenizeScalar(u8, statm, ' ');
                     _ = f.next();
@@ -130,30 +154,62 @@ pub const Reader = struct {
                     const shared = std.fmt.parseInt(u64, f.next() orelse "0", 10) catch 0;
                     p.memory = (resident -| shared) * r.page;
                 } else |_| {}
-                if (files.link(io, dir, std.fmt.bufPrint(&path, "{d}/exe", .{pid}) catch continue, &exe_buf)) |target| {
-                    p.exe = a.dupe(u8, exePath(target)) catch "";
+                // Another user's I/O counters are refused unless we are root.
+                if (r.me == 0 or p.uid == r.me) {
+                    if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
+                        p.disk_read = core.text.field(io_text, "read_bytes:");
+                        p.disk_write = core.text.field(io_text, "write_bytes:");
+                        p.io_known = true;
+                    } else |_| {}
                 }
-                if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
-                    p.disk_read = core.text.field(io_text, "read_bytes:");
-                    p.disk_write = core.text.field(io_text, "write_bytes:");
-                    p.io_known = true;
-                } else |_| {}
             }
-            p.uid = r.uidOf(io, dir, pid, st.start);
-            p.name = displayName(comm, p.exe);
             out.append(a, p) catch break;
         }
-        if (r.uids.count() > 4 * (out.items.len + 64)) r.uids.clearRetainingCapacity();
     }
 
-    fn uidOf(r: *Reader, io: std.Io, dir: std.Io.Dir, pid: i32, start: u64) u32 {
-        if (r.uids.get(pid)) |e| if (e.start == start) return e.uid;
-        var buf: [2048]u8 = undefined;
-        var path: [32]u8 = undefined;
-        const text = files.read(io, dir, std.fmt.bufPrint(&path, "{d}/status", .{pid}) catch return 0, &buf) catch return 0;
-        const uid: u32 = @intCast(core.text.field(text, "Uid:") & 0xffff_ffff);
-        r.uids.put(r.gpa, pid, .{ .start = start, .uid = uid }) catch {};
-        return uid;
+    /// The owner and executable of `pid`, read only when the process is new to
+    /// the reader or has become another program. Kernel threads have neither.
+    fn knownFor(r: *Reader, io: std.Io, dir: std.Io.Dir, pid: i32, st: Stat, kthread: bool) Known {
+        const comm = std.hash.Wyhash.hash(0, st.comm);
+        var fresh: Known = .{ .start = st.start, .comm = comm, .uid = 0, .exe = "", .seen = r.scans };
+        const slot = r.known.getOrPut(r.gpa, pid) catch return fresh;
+        if (slot.found_existing) {
+            if (slot.value_ptr.start == st.start and slot.value_ptr.comm == comm) {
+                slot.value_ptr.seen = r.scans;
+                return slot.value_ptr.*;
+            }
+            r.gpa.free(slot.value_ptr.exe);
+        }
+        if (!kthread) {
+            var path: [32]u8 = undefined;
+            var buf: [2048]u8 = undefined;
+            if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/status", .{pid}) catch "", &buf)) |text| {
+                fresh.uid = @intCast(core.text.field(text, "Uid:") & 0xffff_ffff);
+            } else |_| {}
+            var exe_buf: [512]u8 = undefined;
+            if (files.link(io, dir, std.fmt.bufPrint(&path, "{d}/exe", .{pid}) catch "", &exe_buf)) |target| {
+                fresh.exe = r.gpa.dupe(u8, exePath(target)) catch "";
+            }
+        }
+        slot.value_ptr.* = fresh;
+        return fresh;
+    }
+
+    /// Lets go of the processes the last scan didn't meet.
+    fn forget(r: *Reader) void {
+        var gone: [256]i32 = undefined;
+        while (true) {
+            var n: usize = 0;
+            var it = r.known.iterator();
+            while (it.next()) |e| {
+                if (e.value_ptr.seen == r.scans) continue;
+                gone[n] = e.key_ptr.*;
+                n += 1;
+                if (n == gone.len) break;
+            }
+            for (gone[0..n]) |pid| if (r.known.fetchRemove(pid)) |kv| r.gpa.free(kv.value.exe);
+            if (n < gone.len) return;
+        }
     }
 };
 
