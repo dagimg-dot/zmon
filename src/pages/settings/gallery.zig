@@ -111,7 +111,7 @@ pub fn details(c: *ui.Context, k: theme.Colors, t: *const Theme) void {
     const r = ui.div(c).row().wFull().px(4).pt(4).itemsCenter().gap(12);
     defer r.end();
     {
-        const words = ui.div(c).column().grow().w(0).gap(2);
+        const words = ui.div(c).column().grow().gap(2);
         defer words.end();
         ui.text(c, t.name, .{ .size = 13, .weight = .semibold, .color = k.text });
         if (t.description.len > 0) ui.text(c, t.description, .{ .size = 12, .color = k.secondary, .wrap = true });

@@ -23,6 +23,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     graphs(c, s, k);
     processes(c, s, k);
     accessibility(c, s, k);
+    themes(c, s, k);
     yourThemes(c, s, k);
     about(c, s, k);
     {
@@ -46,6 +47,10 @@ fn appearance(c: *ui.Context, s: *State, k: theme.Colors) void {
             s.save();
         }
     }
+}
+
+/// The gallery, last of the settings, since it is the longest.
+fn themes(c: *ui.Context, s: *State, k: theme.Colors) void {
     // Which kind of theme the gallery shows: the one Appearance uses, or under
     // Match system, the one picked here (opening on the one in effect).
     const showing_dark = switch (s.settings.appearance) {
@@ -56,7 +61,7 @@ fn appearance(c: *ui.Context, s: *State, k: theme.Colors) void {
     const head = ui.div(c).row().wFull().px(4).pt(18).pb(8).itemsCenter().gap(12);
     {
         defer head.end();
-        ui.text(c, if (showing_dark) "Dark theme" else "Light theme", .{ .size = 12.5, .weight = .semibold, .color = k.secondary });
+        ui.text(c, if (s.settings.appearance != .system) "Theme" else if (showing_dark) "Dark theme" else "Light theme", .{ .size = 12.5, .weight = .semibold, .color = k.secondary });
         ui.spacer(c);
         if (s.settings.appearance == .system) {
             var tab: usize = if (showing_dark) 0 else 1;

@@ -153,6 +153,7 @@ test "Settings opens from the sidebar, and a theme card becomes the light theme"
     try openSettings(&t, &state);
     try std.testing.expect(t.hasText("Appearance"));
     try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
+    try reveal(&t, "Catppuccin Latte");
     try t.clickText("Catppuccin Latte");
     t.settle(0.2);
     try std.testing.expectEqualStrings("catppuccin-latte", state.settings.light_theme.slice());
@@ -171,7 +172,7 @@ test "choosing Dark shows the dark themes and uses the dark one" {
     t.settle(0.2);
     try std.testing.expectEqual(.dark, state.settings.appearance);
     try std.testing.expect(state.isDark(false));
-    try std.testing.expect(t.hasText("Dark theme"));
+    try std.testing.expect(t.hasText("Theme")); // one kind of theme, so no dark or light in the heading
     try std.testing.expect(t.hasText("Graphite Dark"));
     try std.testing.expect(!t.hasText("Graphite Light"));
 }
@@ -185,9 +186,11 @@ test "under Match system the gallery switches between dark and light themes" {
     defer t.deinit();
     try openSettings(&t, &state);
     try std.testing.expect(t.hasText("Light theme"));
+    try reveal(&t, "When it's dark");
     try t.clickText("When it's dark");
     t.settle(0.2);
     try std.testing.expect(t.hasText("Dark theme"));
+    try reveal(&t, "Nord");
     try t.clickText("Nord");
     t.settle(0.2);
     try std.testing.expectEqualStrings("nord", state.settings.dark_theme.slice());
@@ -379,4 +382,21 @@ test "text size and more contrast apply from Settings" {
     state.settings.reduce_motion = false;
     t.frame();
     try std.testing.expect(!t.ctx.reduced_motion);
+}
+
+test "Settings puts the theme gallery after the other settings, with no gap after it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = true;
+    state.chooseTheme(true, "evergarden-fall"); // a theme with a description
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    const access = t.findText("Accessibility") orelse return error.TextNotFound;
+    const card = t.findText("Evergarden Fall") orelse return error.TextNotFound;
+    try std.testing.expect(access.y < card.y);
+    const desc = t.findText("cozy evergarden theme for vicinae") orelse return error.TextNotFound;
+    const next = t.findText("Your themes") orelse return error.TextNotFound;
+    try std.testing.expect(next.y - (desc.y + desc.h) < 80);
 }
