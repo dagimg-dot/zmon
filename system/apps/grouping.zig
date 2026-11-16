@@ -58,7 +58,7 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
         var hops: u32 = 0;
         while (hops < 64) : (hops += 1) {
             const parent = at.get(procs[cur].ppid) orelse break;
-            if (scaffolding(&procs[parent])) break;
+            if (procs[parent].kthread or scaffolding(&procs[parent])) break;
             cur = parent;
         }
         root_of[i] = if (p.kthread) std.math.maxInt(u32) else cur;
@@ -200,4 +200,27 @@ test "entries that are not meant to be launched make background groups, not apps
     const procs = [_]Proc{ fake(1, 0, "systemd", ""), fake(5, 1, "portal-bin", "/usr/lib/portal-bin") };
     const groups = try build(arena.allocator(), &procs, &ix);
     for (groups) |g| try std.testing.expect(g.kind != .app);
+}
+
+test "a process the kernel starts leads its own group, not the kernel thread's" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(2, 0, "kthreadd", ""),
+        fake(30, 2, "kworker/u16:2", ""),
+        fake(31, 30, "modprobe", "/usr/bin/modprobe"),
+    };
+    procs[1].kthread = true;
+    procs[2].kthread = true;
+    const groups = try build(arena.allocator(), &procs, &ix);
+    for (groups) |g| {
+        if (g.kind == .kernel) continue;
+        try std.testing.expect(std.mem.indexOfScalar(u32, g.members, @intCast(for (procs, 0..) |p, i| {
+            if (p.pid == g.root) break i;
+        } else 0)) != null); // every group's root is one of its members
+        try std.testing.expect(!std.mem.startsWith(u8, g.name, "kworker"));
+    }
 }
