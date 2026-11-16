@@ -9,5 +9,5 @@
         },
     },
     .fingerprint = 0x2da6fca00d55849b,
-    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .paths = .{ "build.zig", "build.zig.zon", "core", "system", "src" },
 }
