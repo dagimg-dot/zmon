@@ -22,9 +22,9 @@ system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui
   apps/       launcher index, icons, grouping   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
-  app/        state.zig (selection, sorting, sampling clock, ending tasks)  view.zig (sidebar and page switch)
-  ui/         theme.zig fonts.zig charts.zig  assets/fonts/
-  pages/      one folder per page: processes/ performance/  (root.zig is the page)
+  app/        state.zig (selection, sorting, sampling clock, ending tasks)  sidebar.zig (pages and device tiles)  view.zig (page switch)
+  ui/         theme.zig fonts.zig charts.zig tile.zig  assets/fonts/
+  pages/      one folder per page: processes/ devices/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
 ```
 
@@ -90,10 +90,10 @@ zig build test    # test-core, test-system and test-ui together
 A visible change is also rendered and looked at:
 
 ```bash
-nui snapshot --out /tmp/zmon.png --script "click:Performance;live:8"
+nui snapshot --out /tmp/zmon.png --script "click:CPU;live:8"
 ```
 
-Script steps are `click:TEXT`, `type:TEXT`, `key:enter`, `wait:SECONDS` and `live:SECONDS` (the real event loop), separated by `;`. A change in behaviour comes with a test in the module that owns it.
+`click:TEXT` clicks the first match, and the sidebar is drawn first, so `click:CPU` opens the CPU tile, not the column header. Script steps are `click:TEXT`, `type:TEXT`, `key:enter`, `wait:SECONDS` and `live:SECONDS` (the real event loop), separated by `;`. A change in behaviour comes with a test in the module that owns it.
 
 ## Docs
 

@@ -5,7 +5,7 @@ A system monitor for Linux, written in Zig and drawn natively by [nanoui](https:
 ## What it does today
 
 - **Processes:** apps with their launcher icons and the helpers they started, background services and kernel threads, with CPU, memory, disk and threads. Sort by any column, open a group to see its processes, end a task with a confirmation.
-- **Performance:** live CPU (total and per core), memory, disk and network over the last minute, with load and uptime.
+- **Devices:** a sidebar tile for the CPU, memory, disk and network with its live value and the last minute as a chart, opening a page with the history drawn large, the per-core load, load averages and uptime.
 
 History, startup items, a disk analyzer and a floating overlay are planned.
 
