@@ -8,7 +8,7 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 - **Zig 0.17.0 only.** The global `zig` may point at another version, so check `zig version` and use `~/.zvm/0.17.0/zig` when they differ. Other projects here still use 0.16.
 - **nanoui** (github.com/justrach/nanoui) draws everything: flexbox layout, immediate-mode views, a CPU or OpenGL renderer inside GTK. It is pinned by release in `build.zig.zon`. While nanoui is 0.x a minor release may change its API, so bump it on purpose and rerun the tests.
-- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the one bundled asset is the Hanken Grotesk font. Ask before adding anything else, SQLite for history included.
+- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the one bundled asset is the Lexend font. Ask before adding anything else, SQLite for history included.
 - **`nui`** is nanoui's tool for checking an app without opening a window. It is built from a nanoui checkout with `zig build nui`. On this machine: `~/JDrive/Projects/rando/nanoui-src/nanoui/zig-out/bin/nui`.
 
 ## Rules
@@ -35,7 +35,7 @@ Systo has no license. Read it for what the product does, never copy or translate
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
   - Ask before adding anything that signals other users' processes or needs privilege.
 - **Look.**
-  - One typeface: Hanken Grotesk (the one anquar uses), bundled in `src/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
+  - One typeface: Lexend, bundled in `src/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
   - Every colour comes from `theme.zig`, which is monochrome: emphasis is weight and contrast, not hue. No raw hex colours in a page.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.
 - **Privacy.** Never log or persist process command lines or environments.
