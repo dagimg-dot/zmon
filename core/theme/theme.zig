@@ -140,10 +140,21 @@ fn specAt(a: std.mem.Allocator, entries: []const toml.Entry, path: []const u8) e
     const name_path = try std.mem.concat(a, u8, &.{ path, ".name" });
     const name = toml.getString(entries, name_path) orelse return null;
     var spec: Spec = .{ .source = try source(name) };
-    spec.opacity = try numberAt(a, entries, path, ".opacity");
-    spec.darker = try numberAt(a, entries, path, ".darker");
-    spec.lighter = try numberAt(a, entries, path, ".lighter");
+    // A theme file is anyone's text: numbers are held to what they can mean.
+    spec.opacity = within(try numberAt(a, entries, path, ".opacity"), 0, 1);
+    spec.darker = within(try numberAt(a, entries, path, ".darker"), 0, max_factor);
+    spec.lighter = within(try numberAt(a, entries, path, ".lighter"), 0, max_factor);
     return spec;
+}
+
+/// Qt's darker and lighter take a percentage; past 100x is black or white anyway.
+const max_factor = 10000;
+
+/// `v` held between `lo` and `hi`; a number that isn't one (NaN) is dropped.
+fn within(v: ?f32, lo: f32, hi: f32) ?f32 {
+    const n = v orelse return null;
+    if (std.math.isNan(n)) return null;
+    return std.math.clamp(n, lo, hi);
 }
 
 fn numberAt(a: std.mem.Allocator, entries: []const toml.Entry, path: []const u8, key: []const u8) error{OutOfMemory}!?f32 {
@@ -267,7 +278,7 @@ pub const Library = struct {
 
     fn factor(v: f32, is_ref: bool) u32 {
         const f = if (is_ref) v + 100 else v;
-        return @intFromFloat(@max(0, @round(f)));
+        return @intFromFloat(std.math.clamp(@round(f), 0, max_factor + 100));
     }
 
     fn derive(lib: *const Library, i: usize, tok: Token, depth: u8) Rgba {
@@ -324,6 +335,25 @@ pub const Library = struct {
         return best;
     }
 };
+
+test "absurd numbers in a theme file are held in range instead of crashing" {
+    var lib = Library.init(std.testing.allocator);
+    defer lib.deinit();
+    lib.add("wild",
+        \\[meta]
+        \\name = "Wild"
+        \\[colors.core]
+        \\background = "#202020"
+        \\foreground = "#eeeeee"
+        \\accent = { name = "colors.core.foreground", lighter = 1e30 }
+        \\border = { name = "colors.core.foreground", darker = -1e30 }
+        \\secondary_background = { name = "colors.core.background", opacity = 7 }
+    );
+    lib.resolveAll();
+    const t = lib.find("wild").?;
+    try std.testing.expectEqual(@as(usize, 0), lib.problems.items.len);
+    try std.testing.expectEqual(@as(u8, 255), t.color(.panel).a);
+}
 
 test "a token set as a table with a reference and opacity blends over the background" {
     var lib = Library.init(std.testing.allocator);
