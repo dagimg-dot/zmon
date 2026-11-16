@@ -1,7 +1,6 @@
 //! zmon's state: what is selected, how the list is sorted, and the sample the
 //! pages show. The sampler runs from the view's clock, once a second.
 const std = @import("std");
-const linux = std.os.linux;
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const kit = nanoui.kit;
@@ -169,12 +168,14 @@ pub const State = struct {
     }
 
     /// Asks the selection to quit (SIGTERM), or kills it. Only the user's own
-    /// processes, never init, the kernel's threads or zmon itself.
+    /// processes, never init, the kernel's threads or zmon itself, and only the
+    /// very processes that were sampled (a pid can be reused within a second).
     pub fn endTask(s: *State, force: bool) void {
         var sent: usize = 0;
         var refused: usize = 0;
-        const me = linux.getuid();
-        const self = linux.getpid();
+        const control = system.sampler.control;
+        const me = control.currentUid();
+        const self = control.selfPid();
         const procs = s.sampler.procs;
         var one = [_]u32{0};
         const members: []const u32 = if (s.selectedGroup()) |g| g.members else blk: {
@@ -190,7 +191,7 @@ pub const State = struct {
                 refused += 1;
                 continue;
             }
-            if (linux.errno(linux.kill(p.pid, if (force) .KILL else .TERM)) == .SUCCESS) sent += 1;
+            if (control.signal(s.sampler.io, p.pid, p.start, if (force) .kill else .quit)) sent += 1;
         }
         if (sent > 0) {
             s.toaster.push(.{ .title = if (force) "Killed" else "Asked to quit", .message = "" });

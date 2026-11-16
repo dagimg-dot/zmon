@@ -12,6 +12,17 @@ pub fn pageSize() u64 {
 }
 
 pub const process = struct {
+    pub const Signal = enum { quit, kill };
+    pub fn currentUid() u32 {
+        return 0;
+    }
+    pub fn selfPid() i32 {
+        return 0;
+    }
+    pub fn signal(io: std.Io, pid: i32, start: u64, sig: Signal) bool {
+        _ = .{ io, pid, start, sig };
+        return false;
+    }
     pub const Reader = struct {
         pub fn init(gpa: std.mem.Allocator) Reader {
             _ = gpa;

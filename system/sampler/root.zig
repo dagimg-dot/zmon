@@ -16,6 +16,14 @@ const Memory = core.Memory;
 const Ring = core.Ring;
 const Cpu = backend.cpu.Times;
 
+/// Ending tasks: who we are, and signals that only reach the process that was sampled.
+pub const control = struct {
+    pub const Signal = backend.process.Signal;
+    pub const signal = backend.process.signal;
+    pub const currentUid = backend.process.currentUid;
+    pub const selfPid = backend.process.selfPid;
+};
+
 pub const History = struct {
     cpu: Ring(f32) = .{},
     memory: Ring(f32) = .{},
@@ -186,7 +194,9 @@ test "a share of the ticks between two reads is a percentage" {
 // check look inside a backend the host never calls.
 test "the sampler and its backend compile on every OS" {
     std.testing.refAllDecls(backend);
+    std.testing.refAllDecls(backend.process);
     std.testing.refAllDecls(backend.process.Reader);
+    std.testing.refAllDecls(control);
     std.testing.refAllDecls(backend.cpu);
     std.testing.refAllDecls(backend.memory);
     std.testing.refAllDecls(backend.disk);

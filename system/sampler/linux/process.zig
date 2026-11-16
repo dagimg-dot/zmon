@@ -58,6 +58,28 @@ pub fn displayName(comm: []const u8, exe: []const u8) []const u8 {
     return comm;
 }
 
+pub const Signal = enum { quit, kill };
+
+pub fn currentUid() u32 {
+    return std.os.linux.getuid();
+}
+
+pub fn selfPid() i32 {
+    return std.os.linux.getpid();
+}
+
+/// Sends `sig` to `pid` only if it is still the process that started at
+/// `start`: a pid freed since the sample may already belong to another process.
+pub fn signal(io: std.Io, pid: i32, start: u64, sig: Signal) bool {
+    var buf: [1024]u8 = undefined;
+    var path: [32]u8 = undefined;
+    const text = files.read(io, .cwd(), std.fmt.bufPrint(&path, "/proc/{d}/stat", .{pid}) catch return false, &buf) catch return false;
+    const st = parseStat(text) orelse return false;
+    if (st.start != start) return false;
+    const linux = std.os.linux;
+    return linux.errno(linux.kill(pid, if (sig == .kill) .KILL else .TERM)) == .SUCCESS;
+}
+
 /// Walks /proc. It remembers who owns each process, which can't change while
 /// the process lives, so /proc/<pid>/status is read once per process.
 pub const Reader = struct {
@@ -152,6 +174,11 @@ test "parseStat spots kernel threads" {
     const st = parseStat(text).?;
     try std.testing.expect(st.flags & pf_kthread != 0);
     try std.testing.expectEqual(@as(i32, 0), st.ppid);
+}
+
+test "a signal never reaches a process that started at another time" {
+    try std.testing.expect(!signal(std.testing.io, selfPid(), 0, .quit)); // our own pid, but not our start time
+    try std.testing.expect(!signal(std.testing.io, std.math.maxInt(i32), 0, .quit)); // no such process
 }
 
 test "an executable path keeps its own name and only loses a deleted marker" {
