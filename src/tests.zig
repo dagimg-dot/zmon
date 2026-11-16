@@ -6,12 +6,7 @@ const ui = nanoui.ui;
 const app_view = @import("app.zig");
 
 test {
-    _ = @import("procfs.zig");
     _ = @import("sampler.zig");
-    _ = @import("apps.zig");
-    _ = @import("desktop.zig");
-    _ = @import("xdg.zig");
-    _ = @import("icons.zig");
     _ = @import("charts.zig");
     _ = @import("theme.zig");
     _ = @import("fonts.zig");

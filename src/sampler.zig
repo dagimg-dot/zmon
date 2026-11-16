@@ -3,8 +3,8 @@
 //! the kernel keeps into rates by comparing them with the previous sample.
 //! A short history of the totals is kept for the charts.
 const std = @import("std");
-const procfs = @import("procfs.zig");
 const core = @import("zmon-core");
+const procfs = @import("zmon-system").platform.files;
 
 pub const Proc = core.Proc;
 pub const Memory = core.Memory;
@@ -145,8 +145,8 @@ pub const Sampler = struct {
                     p.exe = a.dupe(u8, clean) catch "";
                 }
                 if (procfs.read(s.io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
-                    p.disk_read = procfs.field(io_text, "read_bytes:");
-                    p.disk_write = procfs.field(io_text, "write_bytes:");
+                    p.disk_read = core.text.field(io_text, "read_bytes:");
+                    p.disk_write = core.text.field(io_text, "write_bytes:");
                     p.io_known = true;
                 } else |_| {}
             }
@@ -176,7 +176,7 @@ pub const Sampler = struct {
         var buf: [2048]u8 = undefined;
         var path: [32]u8 = undefined;
         const text = procfs.read(s.io, dir, std.fmt.bufPrint(&path, "{d}/status", .{pid}) catch return 0, &buf) catch return 0;
-        const uid: u32 = @intCast(procfs.field(text, "Uid:") & 0xffff_ffff);
+        const uid: u32 = @intCast(core.text.field(text, "Uid:") & 0xffff_ffff);
         s.uids.put(s.gpa, pid, .{ .start = start, .uid = uid }) catch {};
         return uid;
     }
@@ -318,7 +318,7 @@ fn parseCpus(text: []const u8, out: []Cpu) usize {
 }
 
 fn kb(text: []const u8, key: []const u8) u64 {
-    return procfs.field(text, key) * 1024;
+    return core.text.field(text, key) * 1024;
 }
 
 pub fn parseMeminfo(text: []const u8) Memory {

@@ -10,8 +10,8 @@
 //! Bytes are read once and kept, because nanoui draws from the caller's
 //! memory. Misses are remembered too, so a name is searched for once.
 const std = @import("std");
-const procfs = @import("procfs.zig");
-const xdg = @import("xdg.zig");
+const files = @import("../../platform/root.zig").files;
+const paths = @import("paths.zig");
 
 pub const Kind = enum { png, jpeg, svg };
 
@@ -54,7 +54,7 @@ pub const Cache = struct {
     pub fn init(gpa: std.mem.Allocator, io: std.Io) Cache {
         var c: Cache = .{ .io = io, .gpa = gpa, .arena = .init(gpa) };
         const a = c.arena.allocator();
-        const dirs = xdg.iconDirs(a) catch &.{};
+        const dirs = paths.iconDirs(a) catch &.{};
         c.setDirs(dirs, userTheme(io, a));
         return c;
     }
@@ -154,7 +154,7 @@ pub const Cache = struct {
         const kind = kindOf(path) orelse return null;
         const buf = c.gpa.alloc(u8, max_bytes + 1) catch return null;
         defer c.gpa.free(buf);
-        const bytes = procfs.read(c.io, .cwd(), path, buf) catch return null;
+        const bytes = files.read(c.io, .cwd(), path, buf) catch return null;
         if (bytes.len == 0 or bytes.len > max_bytes) return null;
         if (!looksLike(kind, bytes)) return null;
         const a = c.arena.allocator();
@@ -189,8 +189,8 @@ fn stripExt(name: []const u8) []const u8 {
 fn userTheme(io: std.Io, a: std.mem.Allocator) []const u8 {
     var buf: [8192]u8 = undefined;
     for ([_][]const u8{ "gtk-3.0", "gtk-4.0" }) |dir| {
-        const path = std.fs.path.join(a, &.{ xdg.home(), ".config", dir, "settings.ini" }) catch continue;
-        const text = procfs.read(io, .cwd(), path, &buf) catch continue;
+        const path = std.fs.path.join(a, &.{ paths.home(), ".config", dir, "settings.ini" }) catch continue;
+        const text = files.read(io, .cwd(), path, &buf) catch continue;
         if (themeFromSettings(text)) |t| return a.dupe(u8, t) catch "";
     }
     return "";
@@ -278,10 +278,10 @@ test "absolute paths and odd files" {
 }
 
 test "on this machine, installed apps have icons that resolve" {
-    const apps = @import("apps.zig");
-    var ix = apps.Index.init(std.testing.allocator);
+    const Index = @import("index.zig").Index;
+    var ix = Index.init(std.testing.allocator);
     defer ix.deinit();
-    ix.load(std.testing.io);
+    @import("loader.zig").loadEntries(&ix, std.testing.io);
     var c = Cache.init(std.testing.allocator, std.testing.io);
     defer c.deinit();
     var named: usize = 0;

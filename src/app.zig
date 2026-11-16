@@ -8,8 +8,8 @@ const ui = nanoui.ui;
 const kit = nanoui.kit;
 const core = @import("zmon-core");
 const sampler = @import("sampler.zig");
-const apps = @import("apps.zig");
-const icons = @import("icons.zig");
+const system = @import("zmon-system");
+const apps = system.apps;
 const theme = @import("theme.zig");
 const processes = @import("processes_view.zig");
 const performance = @import("performance_view.zig");
@@ -29,7 +29,7 @@ pub const State = struct {
     gpa: std.mem.Allocator,
     sampler: sampler.Sampler,
     index: apps.Index,
-    icons: icons.Cache,
+    icons: apps.Icons,
     /// Groups and rows of the current sample; replaced with every sample.
     built: std.heap.ArenaAllocator,
     groups: []apps.Group = &.{},
@@ -57,7 +57,7 @@ pub const State = struct {
             .built = .init(gpa),
             .toaster = .{ .gpa = gpa },
         };
-        s.index.load(io);
+        apps.loadEntries(&s.index, io);
         return s;
     }
 
@@ -85,7 +85,7 @@ pub const State = struct {
     pub fn rebuild(s: *State) void {
         _ = s.built.reset(.retain_capacity);
         const a = s.built.allocator();
-        s.groups = apps.build(a, s.sampler.procs, &s.index) catch &.{};
+        s.groups = apps.group(a, s.sampler.procs, &s.index) catch &.{};
         std.mem.sort(apps.Group, s.groups, SortCtx{ .s = s }, SortCtx.less);
         s.rows = layout(s, a) catch &.{};
     }

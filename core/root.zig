@@ -3,6 +3,7 @@
 pub const types = @import("types.zig");
 pub const ring = @import("ring.zig");
 pub const fmt = @import("fmt.zig");
+pub const text = @import("text.zig");
 
 pub const Proc = types.Proc;
 pub const Memory = types.Memory;
@@ -13,4 +14,5 @@ test {
     _ = types;
     _ = ring;
     _ = fmt;
+    _ = text;
 }
