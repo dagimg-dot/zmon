@@ -8,23 +8,25 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 - **Zig 0.17.0 only.** The global `zig` may point at another version, so check `zig version` and use `~/.zvm/0.17.0/zig` when they differ. Other projects here still use 0.16.
 - **nanoui** (github.com/justrach/nanoui) draws everything: flexbox layout, immediate-mode views, a CPU or OpenGL renderer inside GTK. It is pinned by release in `build.zig.zon`. While nanoui is 0.x a minor release may change its API, so bump it on purpose and rerun the tests.
-- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the one bundled asset is the Lexend font. Ask before adding anything else, SQLite for history included.
+- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the bundled assets are the Lexend font and the theme files. Ask before adding anything else, SQLite for history included.
 - **`nui`** is nanoui's tool for checking an app without opening a window. It is built from a nanoui checkout with `zig build nui`. On this machine: `~/JDrive/Projects/rando/nanoui-src/nanoui/zig-out/bin/nui`.
 
 ## Layout
 
 ```
 core/     module zmon-core: plain data and helpers. No OS calls, no nanoui.
-  types.zig ring.zig fmt.zig text.zig
+  types.zig ring.zig fmt.zig text.zig settings.zig (the settings and their file)
+  theme/      colours, a TOML subset, the theme model and resolver, builtin.zig  themes/ (one .toml per theme)
 system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui.
   platform/   quiet file reads              linux/  dummy/
   sampler/    rates and history             linux/{process,cpu,memory,disk,network,load,units}.zig  dummy/
   apps/       launcher index, icons, grouping   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
+  config/     the settings file and the user's theme folder (XDG)   linux/  dummy/
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
-  app/        state.zig (selection, sorting, sampling clock, ending tasks)  sidebar.zig (pages and device tiles)  view.zig (page switch)
-  ui/         theme.zig fonts.zig charts.zig tile.zig  assets/fonts/
-  pages/      one folder per page: processes/ devices/  (root.zig is the page)
+  app/        state.zig (selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
+  ui/         theme.zig (palette to colours) controls.zig (switch, segmented) fonts.zig charts.zig tile.zig  assets/fonts/
+  pages/      one folder per page: processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
 ```
 
@@ -58,8 +60,13 @@ src/      the executable. The only place nanoui is imported.
   - Ask before adding anything that signals other users' processes or needs privilege.
 - **Look.**
   - One typeface: Lexend, bundled in `src/ui/assets/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
-  - Every colour comes from `src/ui/theme.zig`, which is monochrome: emphasis is weight and contrast, not hue. No raw hex colours in a page.
+  - Every colour comes from the active theme, through `theme.Colors` (`src/ui/theme.zig`). No raw hex colours in a page or widget. Graphite Dark and Graphite Light are zmon's own themes and the defaults; keep them monochrome, where emphasis is weight and contrast, not hue.
+  - A theme is a vicinae-format `.toml` in `core/theme/themes/`, listed in `builtin.zig`. It names few colours and the rest are derived when it loads (`core/theme/theme.zig`), so a page asks for a role (panel, muted, selection), never a theme's own key. A new built-in must pass the contrast tests in `builtin.zig` and gets a line in `THEMES.md`.
+  - Use zmon's own controls (`ui/controls.zig`), not nanoui's toggle and segmented control, which take fixed colours from nanoui's theme.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.
+- **Settings.**
+  - Kept in `$XDG_CONFIG_HOME/zmon/settings.toml`, written whole on every change (a new file renamed over the old). User themes come from `$XDG_DATA_HOME/zmon/themes/`, read again when Settings opens.
+  - Tests pass no config location to `State.init`, so they never read or write the real files.
 - **Privacy.** Never log or persist process command lines or environments.
 
 ## Zig 0.17 idioms
@@ -93,7 +100,7 @@ A visible change is also rendered and looked at:
 nui snapshot --out /tmp/zmon.png --script "click:CPU;live:8"
 ```
 
-`click:TEXT` clicks the first match, and the sidebar is drawn first, so `click:CPU` opens the CPU tile, not the column header. Script steps are `click:TEXT`, `type:TEXT`, `key:enter`, `wait:SECONDS` and `live:SECONDS` (the real event loop), separated by `;`. A change in behaviour comes with a test in the module that owns it.
+`click:TEXT` clicks the first match, and the sidebar is drawn first, so `click:CPU` opens the CPU tile, not the column header. Script steps are `click:TEXT`, `type:TEXT`, `key:enter`, `wait:SECONDS` and `live:SECONDS` (the real event loop), separated by `;`. The app reads its settings when it starts, so render with `XDG_CONFIG_HOME` and `XDG_DATA_HOME` pointing at a scratch folder, never the real one; a `settings.toml` there picks the theme to render (`[appearance]` with `mode`, `dark_theme`, `light_theme`). A change in behaviour comes with a test in the module that owns it.
 
 ## Docs
 
