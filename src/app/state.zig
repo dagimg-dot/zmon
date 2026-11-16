@@ -9,32 +9,49 @@ const core = @import("zmon-core");
 const system = @import("zmon-system");
 const apps = system.apps;
 
-/// The page shown: the process list, or one device's page.
-pub const Page = enum { processes, cpu, memory, disk, network, settings };
-pub const Sort = enum { name, cpu, memory, disk };
+/// The page shown: the apps, every process, one device's page, or Settings.
+pub const Page = enum { apps, processes, cpu, memory, disk, network, settings };
+pub const Sort = enum { name, pid, cpu, memory, disk };
 
-/// What one line of the process list shows.
+/// How a list is sorted.
+pub const Order = struct {
+    key: Sort = .cpu,
+    ascending: bool = false,
+};
+
+/// What one line of the Apps list shows: an app, or one of its processes.
 pub const Row = union(enum) {
-    section: struct { title: []const u8, count: usize },
     group: u32,
     proc: u32,
 };
+
+const none: u32 = std.math.maxInt(u32);
 
 pub const State = struct {
     gpa: std.mem.Allocator,
     sampler: system.sampler.Sampler,
     index: apps.Index,
     icons: apps.Icons,
-    /// Groups and rows of the current sample; replaced with every sample.
+    /// Groups and lists of the current sample; replaced with every sample.
     built: std.heap.ArenaAllocator,
     groups: []apps.Group = &.{},
-    rows: []Row = &.{},
+    /// The Apps list: each app, then its processes when it is open.
+    app_rows: []Row = &.{},
+    /// The Processes list: indexes into the sample's processes, filtered by
+    /// the search and sorted.
+    proc_rows: []u32 = &.{},
+    /// For each process in the sample, the index of its group (`none` if it has none).
+    owner: []u32 = &.{},
 
-    page: Page = .processes,
-    sort: Sort = .cpu,
-    ascending: bool = false,
-    /// The pid of the selected group's root or process (0: none).
-    selected: i32 = 0,
+    page: Page = .apps,
+    app_order: Order = .{},
+    proc_order: Order = .{},
+    /// The pid of the selected app's root or one of its processes (0: none).
+    selected_app: i32 = 0,
+    /// The pid selected in Processes (0: none).
+    selected_proc: i32 = 0,
+    /// What Processes is filtered by: part of a name, or a pid.
+    search: ui.TextBuffer = .{},
     expanded: std.AutoHashMapUnmanaged(i32, void) = .empty,
     /// A group opened or closed while the list was being drawn: the rows are
     /// rebuilt only after the list is done with them.
@@ -147,6 +164,7 @@ pub const State = struct {
         s.themes.deinit();
         s.config_arena.deinit();
         s.toaster.deinit();
+        s.search.deinit();
         s.expanded.deinit(s.gpa);
         s.built.deinit();
         s.icons.deinit();
@@ -165,52 +183,94 @@ pub const State = struct {
         return @floatCast(@max(0.05, s.next_sample - now));
     }
 
-    /// Regroups the sample and lays out the process list.
+    /// Regroups the sample and lays out both lists.
     pub fn rebuild(s: *State) void {
         _ = s.built.reset(.retain_capacity);
         const a = s.built.allocator();
-        s.groups = apps.group(a, s.sampler.procs, &s.index) catch &.{};
-        std.mem.sort(apps.Group, s.groups, SortCtx{ .s = s }, SortCtx.less);
-        s.rows = layout(s, a) catch &.{};
+        const procs = s.sampler.procs;
+        s.groups = apps.group(a, procs, &s.index) catch &.{};
+        std.mem.sort(apps.Group, s.groups, GroupOrder{ .o = s.app_order }, GroupOrder.less);
+        s.owner = a.alloc(u32, procs.len) catch &.{};
+        if (s.owner.len == procs.len) {
+            @memset(s.owner, none);
+            for (s.groups, 0..) |g, gi| for (g.members) |m| {
+                s.owner[m] = @intCast(gi);
+            };
+        }
+        s.app_rows = appRows(s, a) catch &.{};
+        s.proc_rows = procRows(s, a) catch &.{};
     }
 
-    const SortCtx = struct {
-        s: *const State,
-        fn key(c: SortCtx, g: apps.Group) f64 {
-            return switch (c.s.sort) {
+    /// The group a process belongs to, if any.
+    pub fn ownerOf(s: *const State, proc: u32) ?*const apps.Group {
+        if (proc >= s.owner.len or s.owner[proc] == none) return null;
+        return &s.groups[s.owner[proc]];
+    }
+
+    /// How many apps are open.
+    pub fn appCount(s: *const State) usize {
+        var n: usize = 0;
+        for (s.groups) |g| n += @intFromBool(g.kind == .app);
+        return n;
+    }
+
+    const GroupOrder = struct {
+        o: Order,
+        fn key(c: GroupOrder, g: apps.Group) f64 {
+            return switch (c.o.key) {
                 .name => 0,
+                .pid => @floatFromInt(g.root),
                 .cpu => g.cpu,
                 .memory => @floatFromInt(g.memory),
                 .disk => g.disk_bps,
             };
         }
-        fn less(c: SortCtx, x: apps.Group, y: apps.Group) bool {
+        fn less(c: GroupOrder, x: apps.Group, y: apps.Group) bool {
             if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
-            if (c.s.sort == .name) {
+            if (c.o.key == .name) {
                 const lt = std.ascii.lessThanIgnoreCase(x.name, y.name);
-                return if (c.s.ascending) lt else !lt and !std.ascii.eqlIgnoreCase(x.name, y.name);
+                return if (c.o.ascending) lt else !lt and !std.ascii.eqlIgnoreCase(x.name, y.name);
             }
             const kx = c.key(x);
             const ky = c.key(y);
             if (kx == ky) return x.memory > y.memory;
-            return if (c.s.ascending) kx < ky else kx > ky;
+            return if (c.o.ascending) kx < ky else kx > ky;
         }
     };
 
-    fn layout(s: *State, a: std.mem.Allocator) ![]Row {
-        var rows: std.ArrayList(Row) = .empty;
-        const titles = [_][]const u8{ "Apps", "Background processes", "Kernel" };
-        var kind: ?apps.Kind = null;
-        for (s.groups, 0..) |g, gi| {
-            if (g.kind == .kernel and !s.settings.show_kernel_threads) continue;
-            if (kind == null or kind.? != g.kind) {
-                kind = g.kind;
-                var count: usize = 0;
-                for (s.groups) |o| if (o.kind == g.kind) {
-                    count += 1;
-                };
-                try rows.append(a, .{ .section = .{ .title = titles[@backingInt(g.kind)], .count = count } });
+    const ProcOrder = struct {
+        o: Order,
+        procs: []const core.Proc,
+        fn key(c: ProcOrder, p: core.Proc) f64 {
+            return switch (c.o.key) {
+                .name => 0,
+                .pid => @floatFromInt(p.pid),
+                .cpu => p.cpu,
+                .memory => @floatFromInt(p.memory),
+                .disk => p.disk_bps,
+            };
+        }
+        fn less(c: ProcOrder, xi: u32, yi: u32) bool {
+            const x = c.procs[xi];
+            const y = c.procs[yi];
+            if (c.o.key == .name) {
+                if (!std.ascii.eqlIgnoreCase(x.name, y.name)) {
+                    const lt = std.ascii.lessThanIgnoreCase(x.name, y.name);
+                    return if (c.o.ascending) lt else !lt;
+                }
+                return x.pid < y.pid;
             }
+            const kx = c.key(x);
+            const ky = c.key(y);
+            if (kx == ky) return if (x.memory != y.memory) x.memory > y.memory else x.pid < y.pid;
+            return if (c.o.ascending) kx < ky else kx > ky;
+        }
+    };
+
+    fn appRows(s: *State, a: std.mem.Allocator) ![]Row {
+        var rows: std.ArrayList(Row) = .empty;
+        for (s.groups, 0..) |g, gi| {
+            if (g.kind != .app) continue;
             try rows.append(a, .{ .group = @intCast(gi) });
             if (g.members.len > 1 and s.expanded.contains(g.root)) {
                 const kids = try a.dupe(u32, g.members[1..]);
@@ -221,17 +281,30 @@ pub const State = struct {
         return rows.items;
     }
 
+    fn procRows(s: *State, a: std.mem.Allocator) ![]u32 {
+        const procs = s.sampler.procs;
+        var rows: std.ArrayList(u32) = .empty;
+        for (procs, 0..) |p, i| {
+            if (p.kthread and !s.settings.show_kernel_threads) continue;
+            if (!core.search.matches(p, s.search.text())) continue;
+            try rows.append(a, @intCast(i));
+        }
+        std.mem.sort(u32, rows.items, ProcOrder{ .o = s.proc_order, .procs = procs }, ProcOrder.less);
+        return rows.items;
+    }
+
     fn busier(procs: []const core.Proc, x: u32, y: u32) bool {
         if (procs[x].cpu != procs[y].cpu) return procs[x].cpu > procs[y].cpu;
         return procs[x].memory > procs[y].memory;
     }
 
+    /// Sorts the list on the page shown by `key`, or reverses it when it already is.
     pub fn sortBy(s: *State, key: Sort) void {
-        if (s.sort == key) {
-            s.ascending = !s.ascending;
+        const o = if (s.page == .processes) &s.proc_order else &s.app_order;
+        if (o.key == key) {
+            o.ascending = !o.ascending;
         } else {
-            s.sort = key;
-            s.ascending = key == .name;
+            o.* = .{ .key = key, .ascending = key == .name or key == .pid };
         }
         s.rebuild();
     }
@@ -241,17 +314,24 @@ pub const State = struct {
         s.rebuild();
     }
 
-    /// The group whose root is `pid`, if the selection is one.
+    /// The pid selected on the page shown.
+    fn selected(s: *const State) i32 {
+        return if (s.page == .processes) s.selected_proc else s.selected_app;
+    }
+
+    /// The app selected in Apps, when the selection is an app and not one of its processes.
     pub fn selectedGroup(s: *const State) ?*const apps.Group {
-        for (s.groups) |*g| if (g.root == s.selected and g.kind != .kernel) return g;
+        if (s.page == .processes or s.selected_app == 0) return null;
+        for (s.groups) |*g| if (g.root == s.selected_app and g.kind == .app) return g;
         return null;
     }
 
     /// What ending the selection would end: its name and how many processes.
     pub fn target(s: *const State) ?struct { name: []const u8, count: usize } {
-        if (s.selected == 0) return null;
+        const pid = s.selected();
+        if (pid == 0) return null;
         if (s.selectedGroup()) |g| return .{ .name = g.name, .count = g.members.len };
-        if (s.sampler.find(s.selected)) |p| return .{ .name = p.name, .count = 1 };
+        if (s.sampler.find(pid)) |p| return .{ .name = p.name, .count = 1 };
         return null;
     }
 
@@ -267,7 +347,8 @@ pub const State = struct {
         const procs = s.sampler.procs;
         var one = [_]u32{0};
         const members: []const u32 = if (s.selectedGroup()) |g| g.members else blk: {
-            for (procs, 0..) |p, i| if (p.pid == s.selected) {
+            const pid = s.selected();
+            for (procs, 0..) |p, i| if (p.pid == pid) {
                 one[0] = @intCast(i);
                 break :blk &one;
             };

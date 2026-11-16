@@ -3,15 +3,13 @@ const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const apps = @import("zmon-system").apps;
-const app = @import("../../app/state.zig");
-const theme = @import("../../ui/theme.zig");
+const theme = @import("theme.zig");
 
-const State = app.State;
 const icon_size = 20;
 
 /// The group's launcher icon, or a plain tile when it has none or can't be drawn.
-pub fn draw(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group) void {
-    if (s.icons.get(g.icon)) |icon| {
+pub fn draw(c: *ui.Context, icons: *apps.Icons, k: theme.Colors, g: apps.Group) void {
+    if (icons.get(g.icon)) |icon| {
         const drawn = switch (icon.kind) {
             .svg => ui.svg(c, .{ .key = icon.path, .bytes = icon.bytes, .size = icon_size }),
             .png, .jpeg => ui.image(c, .{ .key = icon.path, .bytes = icon.bytes, .box = .{ .w = icon_size, .h = icon_size }, .radius = 4 }),

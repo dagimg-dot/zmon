@@ -15,7 +15,7 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 ```
 core/     module zmon-core: plain data and helpers. No OS calls, no nanoui.
-  types.zig ring.zig fmt.zig text.zig settings.zig (the settings and their file)
+  types.zig ring.zig fmt.zig text.zig search.zig settings.zig (the settings and their file)
   theme/      colours, a TOML subset, the theme model and resolver, builtin.zig  themes/ (one .toml per theme)
 system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui.
   platform/   quiet file reads              linux/  dummy/
@@ -25,9 +25,9 @@ system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui
   desktop/    the program's name for the shell, which matches it to zmon.desktop   linux/  dummy/
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
-  app/        state.zig (selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
-  ui/         theme.zig (palette to colours) controls.zig (switch, segmented) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
-  pages/      one folder per page: processes/ devices/ settings/  (root.zig is the page)
+  app/        state.zig (lists, selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)  confirm.zig (End task dialog)
+  ui/         theme.zig (palette to colours) controls.zig (switch, segmented) table.zig (sortable rows) app_icon.zig (an app's icon in a list) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
+  pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
 ```
 

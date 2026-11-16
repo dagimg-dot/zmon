@@ -18,17 +18,23 @@ fn tester(t: *ui.Tester, state: *app_state.State) !void {
     t.settle(0.2);
 }
 
-test "Processes lists the machine's apps and background processes" {
+test "Apps lists the apps that are open, and Processes every process" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
-    try std.testing.expect(t.hasText("Processes"));
-    try std.testing.expect(t.hasText("Background processes"));
-    try std.testing.expect(state.groups.len > 0);
-    try std.testing.expect(state.rows.len > state.groups.len); // sections add rows
+    try std.testing.expectEqual(app_state.Page.apps, state.page);
+    for (state.app_rows) |row| switch (row) {
+        .group => |g| try std.testing.expectEqual(.app, state.groups[g].kind),
+        .proc => {},
+    };
+    try t.clickText("Processes");
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
+    try std.testing.expect(t.hasText("PID"));
+    try std.testing.expectEqual(state.sampler.procs.len, state.proc_rows.len); // the system's own tasks are shown by default
 }
 
 test "a device tile in the sidebar opens that device's page" {
@@ -43,9 +49,9 @@ test "a device tile in the sidebar opens that device's page" {
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Page.memory, state.page);
     try std.testing.expect(t.hasText("In use"));
-    try t.clickText("Processes");
+    try t.clickText("Apps");
     t.settle(0.2);
-    try std.testing.expectEqual(app_state.Page.processes, state.page);
+    try std.testing.expectEqual(app_state.Page.apps, state.page);
 }
 
 test "clicking a column header sorts, and again reverses" {
@@ -55,39 +61,65 @@ test "clicking a column header sorts, and again reverses" {
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
-    try std.testing.expectEqual(app_state.Sort.cpu, state.sort);
+    try t.clickText("Processes");
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Sort.cpu, state.proc_order.key);
     try t.clickText("Name"); // the sidebar also says Memory and CPU, so sort by the one header it doesn't
     t.settle(0.2);
-    try std.testing.expectEqual(app_state.Sort.name, state.sort);
-    try std.testing.expect(state.ascending);
+    try std.testing.expectEqual(app_state.Sort.name, state.proc_order.key);
+    try std.testing.expect(state.proc_order.ascending);
+    const procs = state.sampler.procs;
+    for (state.proc_rows[1..], state.proc_rows[0 .. state.proc_rows.len - 1]) |b, a|
+        try std.testing.expect(!std.ascii.lessThanIgnoreCase(procs[b].name, procs[a].name));
     try t.clickText("Name");
     t.settle(0.2);
-    try std.testing.expect(!state.ascending);
+    try std.testing.expect(!state.proc_order.ascending);
+    try std.testing.expectEqual(app_state.Sort.cpu, state.app_order.key); // Apps keeps its own order
 }
 
-test "collapsing a group at the end of the list does not read past the rows" {
+test "searching Processes keeps the processes whose name or pid matches" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
-    // Scroll to the end, where Kernel threads is the last row, whichever sign the wheel uses.
-    var r = t.findText("Kernel threads");
-    for ([_]f32{ 100_000, -200_000 }) |dy| {
-        if (r != null) break;
-        t.scroll(700, 500, dy);
-        t.settle(0.3);
-        r = t.findText("Kernel threads");
+    try t.clickText("Processes");
+    t.settle(0.2);
+    const all = state.proc_rows.len;
+    try t.clickText("Search by name or PID");
+    t.typeText("1");
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("1", state.search.text());
+    try std.testing.expect(state.proc_rows.len > 0 and state.proc_rows.len < all);
+    for (state.proc_rows) |i| {
+        const p = state.sampler.procs[i];
+        var b: [16]u8 = undefined;
+        const pid = try std.fmt.bufPrint(&b, "{d}", .{p.pid});
+        try std.testing.expect(std.mem.indexOf(u8, p.name, "1") != null or pid[0] == '1');
     }
-    const at = r orelse return error.SkipZigTest;
-    t.doubleClick(at.x + at.w / 2, at.y + at.h / 2); // open it: its threads follow below
-    t.settle(0.3);
-    try std.testing.expect(state.expanded.contains(0));
-    const again = t.findText("Kernel threads") orelse return error.SkipZigTest;
-    t.doubleClick(again.x + again.w / 2, again.y + again.h / 2); // close it: far fewer rows
-    t.settle(0.3);
-    try std.testing.expect(!state.expanded.contains(0));
+    state.search.set("no process is called this");
+    state.rebuild();
+    t.settle(0.2);
+    try std.testing.expect(t.containsText("No process matches"));
+}
+
+test "opening and closing an app shows its processes beneath it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const g = for (state.groups) |g| {
+        if (g.kind == .app and g.members.len > 1) break g;
+    } else return error.SkipZigTest; // no app with helpers is running
+    const before = state.app_rows.len;
+    state.toggle(g.root);
+    try std.testing.expectEqual(before + g.members.len - 1, state.app_rows.len);
+    t.settle(0.2);
+    state.toggle(g.root);
+    try std.testing.expectEqual(before, state.app_rows.len);
 }
 
 /// Scrolls the page until the text `s` is inside the window, whichever sign the wheel uses.
@@ -162,7 +194,7 @@ test "under Match system the gallery switches between dark and light themes" {
     try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
 }
 
-test "turning off the system's own tasks takes Kernel threads off the list" {
+test "turning off the system's own tasks takes the kernel's threads out of Processes" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
@@ -174,10 +206,7 @@ test "turning off the system's own tasks takes Kernel threads off the list" {
     try t.clickText("Show the system's own tasks");
     t.settle(0.2);
     try std.testing.expect(!state.settings.show_kernel_threads);
-    for (state.rows) |row| switch (row) {
-        .group => |gi| try std.testing.expect(state.groups[gi].kind != .kernel),
-        else => {},
-    };
+    for (state.proc_rows) |i| try std.testing.expect(!state.sampler.procs[i].kthread);
 }
 
 test "Reset to defaults brings back Graphite and the default switches" {

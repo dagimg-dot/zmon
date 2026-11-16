@@ -4,7 +4,9 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const state = @import("state.zig");
 const theme = @import("../ui/theme.zig");
+const apps_page = @import("../pages/apps/root.zig");
 const processes = @import("../pages/processes/root.zig");
+const confirm = @import("confirm.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
 const settings_page = @import("../pages/settings/root.zig");
@@ -33,11 +35,12 @@ pub fn view(s: *State, c: *ui.Context) void {
         const main = ui.div(c).column().grow().w(0).hFull().clip();
         defer main.end();
         switch (s.page) {
+            .apps => apps_page.page(c, s, k),
             .processes => processes.page(c, s, k),
             .cpu, .memory, .disk, .network => devices.page(c, s, k),
             .settings => settings_page.page(c, s, k),
         }
     }
-    processes.confirmDialog(c, s);
+    confirm.confirmDialog(c, s);
     s.toaster.view(c);
 }

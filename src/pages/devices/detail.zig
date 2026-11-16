@@ -17,7 +17,7 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
     const h = &s.sampler.history;
     const span = s.settings.span.seconds();
     switch (s.page) {
-        .processes, .settings => {},
+        .apps, .processes, .settings => {},
         .cpu => {
             const machine = s.sampler.machine();
             heading(c, k, "CPU", if (machine.len > 0) machine else c.print("{d} cores", .{s.sampler.cores.len}));

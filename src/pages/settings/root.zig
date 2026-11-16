@@ -88,10 +88,10 @@ fn graphs(c: *ui.Context, s: *State, k: theme.Colors) void {
 }
 
 fn processes(c: *ui.Context, s: *State, k: theme.Colors) void {
-    row.heading(c, k, "Processes");
+    row.heading(c, k, "Apps and processes");
     const g = row.group(c, k, "processes");
     defer g.end();
-    if (row.switchRow(c, k, "kernel", "Show the system's own tasks", "The kernel's threads, grouped at the end of the list.", true, &s.settings.show_kernel_threads)) {
+    if (row.switchRow(c, k, "kernel", "Show the system's own tasks", "The kernel's threads, listed in Processes.", true, &s.settings.show_kernel_threads)) {
         s.save();
         s.rebuild();
     }

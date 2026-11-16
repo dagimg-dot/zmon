@@ -3,7 +3,7 @@ const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const kit = nanoui.kit;
-const app = @import("../../app/state.zig");
+const app = @import("state.zig");
 
 const State = app.State;
 
