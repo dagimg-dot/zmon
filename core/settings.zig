@@ -16,18 +16,6 @@ pub const Span = enum(u16) {
     }
 };
 
-/// How often the machine is sampled.
-pub const Interval = enum(u16) {
-    half = 500,
-    one = 1000,
-    two = 2000,
-    five = 5000,
-
-    pub fn seconds(i: Interval) f64 {
-        return @as(f64, @floatFromInt(@backingInt(i))) / 1000;
-    }
-};
-
 /// A theme's id (its file name without .toml), kept inline so settings own no memory.
 pub const ThemeId = struct {
     buf: [64]u8 = undefined,
@@ -56,7 +44,6 @@ pub const Settings = struct {
     light_theme: ThemeId = .init("graphite-light"),
     colored_graphs: bool = true,
     span: Span = .minute,
-    interval: Interval = .one,
     show_kernel_threads: bool = true,
     confirm_end_task: bool = true,
 
@@ -70,10 +57,6 @@ pub const Settings = struct {
         if (toml.getString(entries, "appearance.light_theme")) |v| if (validId(v)) s.light_theme.set(v);
         s.colored_graphs = boolean(entries, "graphs.colored") orelse s.colored_graphs;
         if (number(entries, "graphs.history")) |n| s.span = std.enums.fromInt(Span, n) orelse s.span;
-        if (toml.get(entries, "sampling.interval")) |v| switch (v) {
-            .number => |n| s.interval = std.enums.fromInt(Interval, @as(u16, @intFromFloat(@round(std.math.clamp(n, 0, 60) * 1000)))) orelse s.interval,
-            else => {},
-        };
         s.show_kernel_threads = boolean(entries, "processes.kernel_threads") orelse s.show_kernel_threads;
         s.confirm_end_task = boolean(entries, "processes.confirm_end_task") orelse s.confirm_end_task;
         return s;
@@ -82,7 +65,7 @@ pub const Settings = struct {
     /// The settings as a file zmon can read back.
     pub fn write(s: *const Settings, out: *std.Io.Writer) std.Io.Writer.Error!void {
         try out.print(
-            \\# zmon settings. Edit while zmon is closed, or change them in zmon's Settings page.
+            \\# zmon settings, written by zmon. Edit while zmon is closed; comments and unknown keys are not kept.
             \\
             \\[appearance]
             \\mode = "{t}"
@@ -92,9 +75,6 @@ pub const Settings = struct {
             \\[graphs]
             \\colored = {}
             \\history = {d}
-            \\
-            \\[sampling]
-            \\interval = {d}
             \\
             \\[processes]
             \\kernel_threads = {}
@@ -106,7 +86,6 @@ pub const Settings = struct {
             s.light_theme.slice(),
             s.colored_graphs,
             s.span.seconds(),
-            s.interval.seconds(),
             s.show_kernel_threads,
             s.confirm_end_task,
         });
@@ -145,7 +124,6 @@ test "settings round-trip through their file" {
         .light_theme = .init("gruvbox-light"),
         .colored_graphs = false,
         .span = .five_minutes,
-        .interval = .half,
         .show_kernel_threads = false,
         .confirm_end_task = false,
     };
@@ -158,7 +136,6 @@ test "settings round-trip through their file" {
     try std.testing.expectEqualStrings("gruvbox-light", back.light_theme.slice());
     try std.testing.expect(!back.colored_graphs);
     try std.testing.expectEqual(Span.five_minutes, back.span);
-    try std.testing.expectEqual(Interval.half, back.interval);
     try std.testing.expect(!back.show_kernel_threads and !back.confirm_end_task);
     s = back;
 }
@@ -176,8 +153,6 @@ test "a broken or strange file keeps the defaults it can't read" {
         \\[graphs]
         \\history = 7
         \\colored = "yes"
-        \\[sampling]
-        \\interval = 2
         \\[future]
         \\thing = 1
     );
@@ -185,5 +160,4 @@ test "a broken or strange file keeps the defaults it can't read" {
     try std.testing.expectEqualStrings("graphite-dark", odd.dark_theme.slice());
     try std.testing.expectEqual(Span.minute, odd.span);
     try std.testing.expect(odd.colored_graphs);
-    try std.testing.expectEqual(Interval.two, odd.interval);
 }
