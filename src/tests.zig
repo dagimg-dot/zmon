@@ -533,3 +533,74 @@ test "a click forgets the way back" {
     t.settle(0.2);
     try std.testing.expectEqual(@as(usize, 0), state.focus_stack.len);
 }
+
+/// The label a screen reader gives the focused control.
+fn focusedLabel(t: *ui.Tester, arena: std.mem.Allocator) ![]const u8 {
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena, &els);
+    for (els.items) |e| if (e.id == t.ctx.focus) return e.label;
+    return "";
+}
+
+test "End task's dialog keeps Tab, the arrows and the screen reader to itself, and Cancel returns to the list" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    try t.clickText("Processes");
+    t.settle(0.2);
+    if (state.proc_rows.len < 3) return error.SkipZigTest;
+    t.key(.down);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus);
+    const chosen = state.selected_proc;
+    t.key(.delete);
+    t.settle(0.3);
+    try std.testing.expect(state.confirm);
+    try std.testing.expectEqualStrings("End task", try focusedLabel(&t, arena.allocator()));
+    // Close, Cancel and End task are the only Tab stops, however often Tab is pressed.
+    try std.testing.expectEqual(@as(usize, 3), t.ctx.last_focusable_ids.items.len);
+    for (0..7) |_| {
+        t.key(.tab);
+        try std.testing.expect(std.mem.indexOfScalar(u64, t.ctx.last_focusable_ids.items, t.ctx.focus) != null);
+    }
+    t.key(.down);
+    _ = t.shortcut(.{ .key = ui.Shortcut.down });
+    try std.testing.expectEqual(chosen, state.selected_proc);
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena.allocator(), &els);
+    for (els.items) |e| try std.testing.expect(!std.mem.eql(u8, e.label, "Apps"));
+    // Onto Cancel, checked by name before Return, so the test never ends a task.
+    while (!std.mem.eql(u8, try focusedLabel(&t, arena.allocator()), "Cancel")) t.key(.tab);
+    t.key(.enter);
+    t.settle(0.3);
+    try std.testing.expect(!state.confirm);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus);
+}
+
+test "the shortcuts overlay takes the focus and gives it back where it was" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.key(.tab);
+    const before = t.ctx.focus;
+    try std.testing.expect(before != 0);
+    try std.testing.expect(t.shortcut(.{ .key = '?', .cmd = true, .shift = true }));
+    t.settle(0.3);
+    try std.testing.expect(state.shortcuts_open);
+    try std.testing.expectEqual(@as(usize, 1), t.ctx.last_focusable_ids.items.len); // its Close button
+    const close = t.ctx.focus;
+    try std.testing.expect(close != before);
+    t.key(.tab);
+    try std.testing.expectEqual(close, t.ctx.focus);
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape });
+    t.settle(0.4);
+    try std.testing.expect(!state.shortcuts_open);
+    try std.testing.expectEqual(before, t.ctx.focus);
+}

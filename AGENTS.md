@@ -27,7 +27,7 @@ src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
   app/        state.zig (lists, selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
               keys.zig (shortcuts)  focus.zig (stepping in, Escape back)  shortcuts.zig (their overlay)  confirm.zig (End task dialog)
-  ui/         theme.zig (palette to colours) controls.zig (press, button, switch, segmented) table.zig (sortable rows) app_icon.zig (an app's icon in a list) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
+  ui/         theme.zig (palette to colours) controls.zig (press, button, switch, segmented) dialog.zig (a dialog that keeps the keyboard) table.zig (sortable rows) app_icon.zig (an app's icon in a list) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
 ```
@@ -64,11 +64,12 @@ src/      the executable. The only place nanoui is imported.
   - One typeface: Lexend, bundled in `src/ui/assets/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
   - Every colour comes from the active theme, through `theme.Colors` (`src/ui/theme.zig`). No raw hex colours in a page or widget. Graphite Dark and Graphite Light are zmon's own themes and the defaults; keep them monochrome, where emphasis is weight and contrast, not hue.
   - A theme is a vicinae-format `.toml` in `core/theme/themes/`, listed in `builtin.zig`. It names few colours and the rest are derived when it loads (`core/theme/theme.zig`), so a page asks for a role (panel, muted, selection), never a theme's own key. A new built-in must pass the contrast tests in `builtin.zig` and gets a line in `THEMES.md`.
-  - Use zmon's own controls (`ui/controls.zig`), not nanoui's toggle, segmented control or `kit.button`, which take fixed colours from nanoui's theme and can't take the keyboard's focus.
+  - Use zmon's own controls (`ui/controls.zig`, `ui/dialog.zig`), not nanoui's toggle, segmented control, `kit.button` or `kit.dialog`, which take fixed colours from nanoui's theme and can't take the keyboard's focus.
 - **Keyboard and accessibility.**
   - Everything the mouse can do, the keyboard can. A new control goes through `controls.press`, so Tab reaches it, Space or Return presses it, and a screen reader is told its role, name and state. A list row gets `table.describeRow`.
   - Shortcuts live in `app/keys.zig` and are listed once, in `app/shortcuts.zig`, which draws the overlay; README's table follows it. Follow GNOME's conventions first (Ctrl+F, Ctrl+Q, Ctrl+?), and never take a key a focused text field needs (arrows left and right, Home, End, Delete).
   - Focus is drawn only after a key (`State.keyboard`), never after a click.
+  - An open dialog keeps the keyboard: Tab moves only between its controls, the focus starts on its main button, a screen reader is told only of it, and closing it returns the focus where it was. A new dialog goes through `ui/dialog.zig` and `State.dialogOpen`.
   - Focus moves in and out through one stack (`core/focus.zig`, `app/focus.zig`). Any key that steps into something (a page from the sidebar, the search) remembers where the focus was, with `focus.stepIn` or `focus.remember`; Escape only ever calls `focus.back`. Never set `c.focus` for a step in without them, or Escape stops retracing the way in. A click clears the stack.
   - Text size, more contrast and reduced motion are settings, because nanoui's Linux backend doesn't read the desktop's. Layouts must survive Larger text (1.3x): truncate with an ellipsis rather than clip.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.

@@ -26,7 +26,17 @@ pub fn remember(c: *ui.Context, s: *State) void {
 /// drawn, or to `fallback` when there is none.
 pub fn back(c: *ui.Context, s: *State, fallback: u64) void {
     // The controls drawn in the last frame: a step whose page has gone is skipped.
-    const to = s.focus_stack.pop(c.last_focusable_ids.items, c.focus) orelse fallback;
+    backAmong(c, s, c.last_focusable_ids.items, fallback);
+}
+
+/// A dialog just closed: back to where the focus was when it opened. The
+/// last frame's controls were only the dialog's, so this frame's are asked.
+pub fn leaveDialog(c: *ui.Context, s: *State, fallback: u64) void {
+    backAmong(c, s, c.focusable_ids.items, fallback);
+}
+
+fn backAmong(c: *ui.Context, s: *State, alive: []const u64, fallback: u64) void {
+    const to = s.focus_stack.pop(alive, c.focus) orelse fallback;
     if (to == 0 or to == c.focus) return;
     c.focus = to;
     c.changed = true;

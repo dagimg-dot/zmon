@@ -8,6 +8,7 @@ const apps_page = @import("../pages/apps/root.zig");
 const processes = @import("../pages/processes/root.zig");
 const confirm = @import("confirm.zig");
 const keys = @import("keys.zig");
+const focus = @import("focus.zig");
 const shortcuts = @import("shortcuts.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
@@ -35,28 +36,41 @@ pub fn view(s: *State, c: *ui.Context) void {
     c.focus_ring = if (s.keyboard) .{ .color = k.accent, .width = 2 } else null;
 
     const root = ui.div(c).row().sizeFull().bg(k.page);
-    defer root.end();
-    sidebar.draw(c, s, k);
-    const sidebar_stops = c.focusable_ids.items.len;
-    _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = k.separator }, .none, null);
     {
-        const main = ui.div(c).column().grow().w(0).hFull().clip();
-        defer main.end();
-        switch (s.page) {
-            .apps => apps_page.page(c, s, k),
-            .processes => processes.page(c, s, k),
-            .cpu, .memory, .disk, .network => devices.page(c, s, k),
-            .settings => settings_page.page(c, s, k),
+        defer root.end();
+        sidebar.draw(c, s, k);
+        const sidebar_stops = c.focusable_ids.items.len;
+        _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = k.separator }, .none, null);
+        {
+            const main = ui.div(c).column().grow().w(0).hFull().clip();
+            defer main.end();
+            switch (s.page) {
+                .apps => apps_page.page(c, s, k),
+                .processes => processes.page(c, s, k),
+                .cpu, .memory, .disk, .network => devices.page(c, s, k),
+                .settings => settings_page.page(c, s, k),
+            }
         }
+        if (s.focus_content) {
+            s.focus_content = false;
+            focusContent(c, s, sidebar_stops);
+        }
+        s.toaster.view(c);
     }
-    if (s.focus_content) {
-        s.focus_content = false;
-        focusContent(c, s, sidebar_stops);
-    }
-    confirm.confirmDialog(c, s);
-    shortcuts.overlay(c, s, k);
+    dialogs(c, s, k, root);
     s.last_focus = c.focus;
-    s.toaster.view(c);
+}
+
+/// The dialogs, over the page. One opening remembers where the focus was, so
+/// closing it goes back there; while one is open, a screen reader is kept
+/// to it, as Tab is (ui/dialog.zig).
+fn dialogs(c: *ui.Context, s: *State, k: theme.Colors, behind: ui.Div) void {
+    if (s.dialogOpen() and !s.dialog_was_open) focus.remember(c, s);
+    if (s.dialogOpen()) ui.access.hide(c, behind.index);
+    confirm.confirmDialog(c, s, k);
+    shortcuts.overlay(c, s, k);
+    if (s.dialog_was_open and !s.dialogOpen()) focus.leaveDialog(c, s, if (s.onList()) s.list_id else s.nav_ids.get(s.page));
+    s.dialog_was_open = s.dialogOpen();
 }
 
 /// Moves the focus into the page just opened: a list page's list, else the

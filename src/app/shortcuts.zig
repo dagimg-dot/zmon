@@ -2,9 +2,9 @@
 //! what each key does, grouped, with the keys drawn as keycaps.
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
-const kit = nanoui.kit;
 const app = @import("state.zig");
 const theme = @import("../ui/theme.zig");
+const dialog = @import("../ui/dialog.zig");
 
 const Item = struct { keys: []const []const u8, what: []const u8 };
 const Group = struct { title: []const u8, items: []const Item };
@@ -41,11 +41,9 @@ pub const groups = [_]Group{
 };
 
 pub fn overlay(c: *ui.Context, s: *app.State, k: theme.Colors) void {
-    const dlg = kit.dialog(c, "shortcuts", &s.shortcuts_open, .{
+    const dlg = dialog.begin(c, k, "shortcuts", &s.shortcuts_open, .{
         .title = "Keyboard shortcuts",
         .width = 680,
-        .ok = "",
-        .cancel = "",
     }) orelse return;
     {
         const cols = ui.div(c).row().wFull().gap(28).pt(4);

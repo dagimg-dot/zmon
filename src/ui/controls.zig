@@ -18,6 +18,8 @@ pub fn press(c: *ui.Context, d: ui.Div, desc: ui.access.Describe) bool {
 pub const ButtonOptions = struct {
     icon: []const u8 = "",
     disabled: bool = false,
+    /// It does something that can't be undone (End task).
+    danger: bool = false,
     /// What a screen reader adds after the label ("Asks first").
     hint: []const u8 = "",
 };
@@ -25,9 +27,9 @@ pub const ButtonOptions = struct {
 /// An outlined button; true when it was pressed.
 pub fn button(c: *ui.Context, k: theme.Colors, label: []const u8, opts: ButtonOptions) bool {
     ui.key(c, label);
-    const b = ui.div(c).row().h(30).px(12).gap(6).itemsCenter().rounded(8).border(k.border).control();
+    const b = ui.div(c).row().h(30).px(12).gap(6).itemsCenter().rounded(8).border(if (opts.danger and !opts.disabled) k.danger else k.border).control();
     defer b.end();
-    const ink = if (opts.disabled) k.tertiary else k.text;
+    const ink = if (opts.disabled) k.tertiary else if (opts.danger) k.danger else k.text;
     if (opts.disabled) {
         ui.access.describe(c, b.index, .{ .label = label, .enabled = false });
     } else {

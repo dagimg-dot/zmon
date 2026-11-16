@@ -75,6 +75,8 @@ pub const State = struct {
     /// rebuilt only after the list is done with them.
     pending_toggle: ?i32 = null,
     confirm: bool = false,
+    /// A dialog was open when the last frame ended, so its closing can be seen.
+    dialog_was_open: bool = false,
     toaster: kit.Toaster,
     next_sample: f64 = 0,
     /// Overrides the system's light or dark setting (tests, screenshots).
@@ -354,6 +356,11 @@ pub const State = struct {
     pub fn open(s: *State, page: Page) void {
         if (page == .settings and s.page != .settings) s.reload_themes = true;
         s.page = page;
+    }
+
+    /// A dialog is open over the page: End task's or the shortcuts.
+    pub fn dialogOpen(s: *const State) bool {
+        return s.confirm or s.shortcuts_open;
     }
 
     /// Whether the page shown is one of the two lists.
