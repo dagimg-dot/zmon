@@ -19,7 +19,7 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
         defer head.end();
         ui.text(c, "zmon", .{ .size = 17, .weight = .bold, .color = k.text });
     }
-    nav(c, s, k, .processes, "Processes", "list.bullet");
+    nav(c, s, k, .processes, "Processes", "waveform.path.ecg");
     section(c, k, "Devices");
     devices(c, s, k);
     ui.spacer(c);
