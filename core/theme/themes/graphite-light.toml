@@ -1,0 +1,39 @@
+# zmon's own theme: paper white and ink, emphasis by weight and contrast.
+
+[meta]
+version = 1
+name = "Graphite Light"
+description = "zmon's own paper white, with ink-black text"
+variant = "light"
+
+[colors.core]
+background = "#FFFFFF"
+foreground = "#161616"
+secondary_background = "#F6F6F6"
+border = "#CDCDCD"
+accent = "#161616"
+accent_foreground = "#FFFFFF"
+
+[colors.accents]
+blue = "#2F6FB0"
+green = "#3B7D3A"
+magenta = "#A23D8C"
+orange = "#B4621F"
+purple = "#6A55B8"
+red = "#D92D20"
+yellow = "#8E7417"
+cyan = "#227A7A"
+
+[colors.text]
+muted = "#6B6B6B"
+placeholder = "#A4A4A4"
+
+[colors.list.item.selection]
+background = "#161616"
+foreground = "#FFFFFF"
+
+[colors.list.item.hover]
+background = "#F0F0F0"
+
+[colors.grid.item]
+background = "#F6F6F6"

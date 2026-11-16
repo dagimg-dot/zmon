@@ -1,0 +1,39 @@
+# zmon's own theme: quiet greys and ink-white text, emphasis by weight and contrast.
+
+[meta]
+version = 1
+name = "Graphite Dark"
+description = "zmon's own quiet greys, with ink-white text"
+variant = "dark"
+
+[colors.core]
+background = "#141414"
+foreground = "#F2F2F2"
+secondary_background = "#1B1B1B"
+border = "#404040"
+accent = "#EEEEEE"
+accent_foreground = "#141414"
+
+[colors.accents]
+blue = "#7AA2C9"
+green = "#86B07F"
+magenta = "#C08CB8"
+orange = "#D39B62"
+purple = "#A99AD6"
+red = "#FF6B5E"
+yellow = "#D6C27A"
+cyan = "#7FB8B8"
+
+[colors.text]
+muted = "#9A9A9A"
+placeholder = "#66666A"
+
+[colors.list.item.selection]
+background = "#EEEEEE"
+foreground = "#141414"
+
+[colors.list.item.hover]
+background = "#232323"
+
+[colors.grid.item]
+background = "#1B1B1B"
