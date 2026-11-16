@@ -92,6 +92,7 @@ pub const Reader = struct {
                 .pid = pid,
                 .ppid = st.ppid,
                 .name = "",
+                .comm = comm,
                 .state = st.state,
                 .threads = st.threads,
                 .kthread = st.flags & pf_kthread != 0,

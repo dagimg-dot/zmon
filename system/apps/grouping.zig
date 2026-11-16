@@ -27,7 +27,8 @@ pub const Group = struct {
     disk_bps: f32 = 0,
 };
 
-/// Processes that start others without being what a person runs.
+/// Processes that start others without being what a person runs, by the
+/// kernel's 15-character name.
 fn scaffolding(p: *const Proc) bool {
     if (p.pid <= 2) return true;
     const names = [_][]const u8{
@@ -37,7 +38,7 @@ fn scaffolding(p: *const Proc) bool {
         "dbus-broker", "dbus-broker-lau", "sshd",            "cron",            "crond",    "agetty",   "greetd",
         "ly",
     };
-    for (names) |n| if (std.mem.eql(u8, p.name, n)) return true;
+    for (names) |n| if (std.mem.eql(u8, p.comm, n)) return true;
     return false;
 }
 
@@ -120,7 +121,26 @@ fn order(_: void, x: Group, y: Group) bool {
 const Index = @import("root.zig").Index;
 
 fn fake(pid: i32, ppid: i32, name: []const u8, exe: []const u8) Proc {
-    return .{ .pid = pid, .ppid = ppid, .name = name, .exe = exe };
+    return .{ .pid = pid, .ppid = ppid, .name = name, .comm = name[0..@min(name.len, 15)], .exe = exe };
+}
+
+test "scaffolding is recognised by the kernel's short name, even when the full name is known" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(50, 1, "dbus-broker-launch", "/usr/bin/dbus-broker-launch"),
+        fake(60, 50, "dbus-broker", "/usr/bin/dbus-broker"),
+    };
+    const groups = try build(arena.allocator(), &procs, &ix);
+    var broker: ?Group = null;
+    for (groups) |g| if (g.root == 60) {
+        broker = g;
+    };
+    try std.testing.expect(broker != null); // dbus-broker leads a group of its own
+    try std.testing.expectEqual(@as(usize, 1), broker.?.members.len);
 }
 
 test "an app keeps its helpers; scaffolding does not swallow its apps" {

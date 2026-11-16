@@ -9,6 +9,9 @@ pub const Proc = struct {
     /// Display name: the kernel's 15-character name, or the executable's
     /// when that is the longer form of it.
     name: []const u8,
+    /// The kernel's own name, cut at 15 characters: stable whether or not the
+    /// executable can be read, so it is what names are matched against.
+    comm: []const u8 = "",
     /// Path of the executable, or "" when it can't be read.
     exe: []const u8 = "",
     state: u8 = '?',
