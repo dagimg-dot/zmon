@@ -4,8 +4,8 @@ const files = @import("../../platform/root.zig").files;
 
 /// Bytes read and written since boot, by every whole disk.
 pub fn read(io: std.Io) [2]u64 {
-    var buf: [32768]u8 = undefined;
-    const text = files.read(io, .cwd(), "/proc/diskstats", &buf) catch return .{ 0, 0 };
+    var buf: [65536]u8 = undefined;
+    const text = files.readWhole(io, .cwd(), "/proc/diskstats", &buf) catch return .{ 0, 0 };
     return parseDiskstats(text);
 }
 

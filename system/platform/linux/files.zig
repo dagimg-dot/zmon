@@ -7,7 +7,7 @@
 const std = @import("std");
 const linux = std.os.linux;
 
-pub const Error = error{ AccessDenied, Gone, Unreadable };
+pub const Error = error{ AccessDenied, Gone, Unreadable, Truncated };
 
 /// Reads up to `buf.len` bytes of `path` (relative to `dir`) into `buf`.
 pub fn read(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) Error![]u8 {
@@ -32,6 +32,14 @@ pub fn read(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) Error![]u8
         }
     }
     return buf[0..n];
+}
+
+/// As `read`, but a file that fills `buf` is an error rather than a silent cut:
+/// for listings where every line counts, such as /proc/net/dev.
+pub fn readWhole(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) Error![]u8 {
+    const text = try read(io, dir, path, buf);
+    if (text.len == buf.len) return error.Truncated;
+    return text;
 }
 
 /// The target of the symbolic link `path` (relative to `dir`), or null.
