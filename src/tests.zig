@@ -24,4 +24,7 @@ test {
     _ = @import("procfs.zig");
     _ = @import("sampler.zig");
     _ = @import("apps.zig");
+    _ = @import("fmt.zig");
+    _ = @import("theme.zig");
+    _ = @import("charts.zig");
 }
