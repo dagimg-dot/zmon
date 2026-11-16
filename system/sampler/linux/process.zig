@@ -43,6 +43,12 @@ pub fn parseStat(text: []const u8) ?Stat {
     };
 }
 
+/// The executable a /proc/<pid>/exe link names: the kernel marks a file that
+/// has been replaced since it started with a " (deleted)" suffix.
+pub fn exePath(target: []const u8) []const u8 {
+    return std.mem.cutSuffix(u8, target, " (deleted)") orelse target;
+}
+
 /// The kernel cuts names at 15 characters; the executable's file name is
 /// the whole of it when it starts the same way.
 pub fn displayName(comm: []const u8, exe: []const u8) []const u8 {
@@ -102,8 +108,7 @@ pub const Reader = struct {
                     p.memory = (resident -| shared) * r.page;
                 } else |_| {}
                 if (files.link(io, dir, std.fmt.bufPrint(&path, "{d}/exe", .{pid}) catch continue, &exe_buf)) |target| {
-                    const clean = std.mem.trimEnd(u8, target, " (deleted)");
-                    p.exe = a.dupe(u8, clean) catch "";
+                    p.exe = a.dupe(u8, exePath(target)) catch "";
                 }
                 if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
                     p.disk_read = core.text.field(io_text, "read_bytes:");
@@ -146,6 +151,13 @@ test "parseStat spots kernel threads" {
     const st = parseStat(text).?;
     try std.testing.expect(st.flags & pf_kthread != 0);
     try std.testing.expectEqual(@as(i32, 0), st.ppid);
+}
+
+test "an executable path keeps its own name and only loses a deleted marker" {
+    try std.testing.expectEqualStrings("/usr/bin/node", exePath("/usr/bin/node"));
+    try std.testing.expectEqualStrings("/usr/lib/xdg-desktop-portal", exePath("/usr/lib/xdg-desktop-portal"));
+    try std.testing.expectEqualStrings("/usr/lib/systemd/systemd", exePath("/usr/lib/systemd/systemd"));
+    try std.testing.expectEqualStrings("/usr/bin/node", exePath("/usr/bin/node (deleted)"));
 }
 
 test "displayName prefers the longer executable name" {
