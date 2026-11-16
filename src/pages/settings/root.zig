@@ -85,9 +85,10 @@ fn graphs(c: *ui.Context, s: *State, k: theme.Colors) void {
     {
         const r = row.begin(c, k, "span", "Graphs show the last", "", false);
         defer r.end();
-        var i: usize = if (s.settings.span == .minute) 0 else 1;
-        if (controls.segmented(c, k, "span-choice", &.{ "1 minute", "5 minutes" }, &i)) {
-            s.settings.span = if (i == 0) .minute else .five_minutes;
+        const spans = [_]core.settings.Span{ .minute, .five_minutes, .hour };
+        var i: usize = std.mem.indexOfScalar(core.settings.Span, &spans, s.settings.span) orelse 0;
+        if (controls.segmented(c, k, "span-choice", &.{ "1 minute", "5 minutes", "1 hour" }, &i)) {
+            s.settings.span = spans[i];
             s.save();
         }
     }

@@ -10,6 +10,7 @@ pub const Appearance = enum { system, light, dark };
 pub const Span = enum(u16) {
     minute = 60,
     five_minutes = 300,
+    hour = 3600,
 
     pub fn seconds(s: Span) usize {
         return @backingInt(s);
@@ -174,6 +175,12 @@ test "settings round-trip through their file" {
     try std.testing.expectEqual(TextSize.larger, back.text_size);
     try std.testing.expect(back.more_contrast and back.reduce_motion);
     s = back;
+}
+
+test "an hour of history is a choice the file keeps" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectEqual(Span.hour, Settings.parse(arena.allocator(), "[graphs]\nhistory = 3600\n").span);
 }
 
 test "a broken or strange file keeps the defaults it can't read" {

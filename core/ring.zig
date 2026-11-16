@@ -1,7 +1,9 @@
 //! A fixed-size history, newest last: what the charts draw.
 const std = @import("std");
 
-pub const history_len = 300;
+/// An hour at one sample a second: what the longest graph shows. Kept in
+/// memory only (14 KB a series).
+pub const history_len = 3600;
 
 /// A fixed-size history, newest last.
 pub fn Ring(comptime T: type) type {

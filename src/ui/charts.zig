@@ -47,18 +47,27 @@ fn series(c: *ui.Context, cv: *ui.Canvas, ring: *const core.Ring(f32), window: u
     const n = @min(ring.len, window);
     if (n < 2) return;
     const first = ring.len - n;
-    const pts = c.alloc().alloc(ui.Point, n) catch return;
+    // An hour is 3600 samples in a few hundred pixels: one point per pixel,
+    // the highest sample in it, so a short spike still shows.
+    const step = @max(1, window / @max(1, @as(usize, @intFromFloat(w))));
+    const count = (n + step - 1) / step;
+    if (count < 2) return;
+    const pts = c.alloc().alloc(ui.Point, count) catch return;
     const span: f32 = @floatFromInt(window - 1);
     const offset: f32 = @floatFromInt(window - n);
     for (pts, 0..) |*p, k| {
-        const v = std.math.clamp(ring.at(first + k) / top, 0, 1);
-        p.* = .{ .x = w * (offset + @as(f32, @floatFromInt(k))) / span, .y = h - 1 - v * (h - 2) };
+        const from = k * step;
+        var peak: f32 = 0;
+        for (from..@min(n, from + step)) |j| peak = @max(peak, ring.at(first + j));
+        const v = std.math.clamp(peak / top, 0, 1);
+        p.* = .{ .x = w * (offset + @as(f32, @floatFromInt(from))) / span, .y = h - 1 - v * (h - 2) };
     }
+    const n_pts = pts.len;
     if (fill) {
-        const poly = c.alloc().alloc(ui.Point, n + 2) catch return;
-        @memcpy(poly[0..n], pts);
-        poly[n] = .{ .x = pts[n - 1].x, .y = h };
-        poly[n + 1] = .{ .x = pts[0].x, .y = h };
+        const poly = c.alloc().alloc(ui.Point, n_pts + 2) catch return;
+        @memcpy(poly[0..n_pts], pts);
+        poly[n_pts] = .{ .x = pts[n_pts - 1].x, .y = h };
+        poly[n_pts + 1] = .{ .x = pts[0].x, .y = h };
         cv.fill(poly, color.alpha(0.14));
     }
     cv.polyline(pts, .{ .width = 1.6, .color = color });
