@@ -5,6 +5,7 @@ pub const ring = @import("ring.zig");
 pub const fmt = @import("fmt.zig");
 pub const text = @import("text.zig");
 pub const search = @import("search.zig");
+pub const focus = @import("focus.zig");
 pub const settings = @import("settings.zig");
 pub const themes = @import("theme/root.zig");
 
@@ -19,6 +20,7 @@ test {
     _ = fmt;
     _ = text;
     _ = search;
+    _ = focus;
     _ = settings;
     _ = themes;
 }

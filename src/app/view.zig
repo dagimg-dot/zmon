@@ -37,6 +37,7 @@ pub fn view(s: *State, c: *ui.Context) void {
     const root = ui.div(c).row().sizeFull().bg(k.page);
     defer root.end();
     sidebar.draw(c, s, k);
+    const sidebar_stops = c.focusable_ids.items.len;
     _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = k.separator }, .none, null);
     {
         const main = ui.div(c).column().grow().w(0).hFull().clip();
@@ -48,10 +49,23 @@ pub fn view(s: *State, c: *ui.Context) void {
             .settings => settings_page.page(c, s, k),
         }
     }
+    if (s.focus_content) {
+        s.focus_content = false;
+        focusContent(c, s, sidebar_stops);
+    }
     confirm.confirmDialog(c, s);
     shortcuts.overlay(c, s, k);
     s.last_focus = c.focus;
     s.toaster.view(c);
+}
+
+/// Moves the focus into the page just opened: a list page's list, else the
+/// page's first control. A device page has none, so its tile keeps it.
+fn focusContent(c: *ui.Context, s: *State, sidebar_stops: usize) void {
+    const target = if (s.onList()) s.list_id else if (c.focusable_ids.items.len > sidebar_stops) c.focusable_ids.items[sidebar_stops] else 0;
+    if (target == 0) return;
+    c.focus = target;
+    c.changed = true;
 }
 
 /// Settings' Reduce motion, on top of the system's: turning it off gives the

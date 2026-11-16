@@ -249,13 +249,15 @@ test "arrow keys move the selection, Home and End jump, and Delete asks before e
     try std.testing.expectEqual(state.proc_rows.len - 1, state.selectedRow().?);
     t.key(.home);
     try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    const chosen = state.selected_proc; // the list re-sorts live, so follow the process, not its row
     t.key(.delete); // asks first; the test never confirms, so nothing is signalled
     try std.testing.expect(state.confirm);
     _ = t.shortcut(.{ .key = ui.Shortcut.escape });
     t.settle(0.3);
     try std.testing.expect(!state.confirm);
-    _ = t.shortcut(.{ .key = ui.Shortcut.escape }); // with no search, Escape clears the selection
-    try std.testing.expectEqual(@as(?usize, null), state.selectedRow());
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape }); // with no search, Escape goes back to the sidebar
+    try std.testing.expectEqual(state.nav_ids.get(.processes), t.ctx.focus);
+    try std.testing.expectEqual(chosen, state.selected_proc); // and the selection stays
 }
 
 test "Right shows an app's processes and Left hides them again" {
@@ -401,7 +403,7 @@ test "Settings puts the theme gallery after the other settings, with no gap afte
     try std.testing.expect(next.y - (desc.y + desc.h) < 80);
 }
 
-test "Return presses the focused sidebar item on a list page, not the list" {
+test "Return on the sidebar opens the page and goes into it, and Escape comes back out" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
@@ -413,12 +415,37 @@ test "Return presses the focused sidebar item on a list page, not the list" {
     t.key(.enter);
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Page.processes, state.page);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus); // in the table
+    t.key(.escape);
+    t.settle(0.1);
+    try std.testing.expectEqual(state.nav_ids.get(.processes), t.ctx.focus); // back on the sidebar
     t.setMods(.{ .shift = true });
-    t.key(.tab); // back to Apps
+    t.key(.tab); // up to Apps
     t.setMods(.{});
     t.key(.enter);
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Page.apps, state.page);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus);
+}
+
+test "Return on Settings goes to its first control, and Escape back to the sidebar" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.setMods(.{ .shift = true });
+    t.key(.tab); // backwards from the start wraps to the last stop
+    t.setMods(.{});
+    while (t.ctx.focus != state.nav_ids.get(.settings)) t.key(.tab);
+    t.key(.enter);
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.settings, state.page);
+    try std.testing.expect(t.ctx.focus != state.nav_ids.get(.settings) and t.ctx.focus != 0);
+    t.key(.escape);
+    t.settle(0.1);
+    try std.testing.expectEqual(state.nav_ids.get(.settings), t.ctx.focus);
 }
 
 test "the list is one Tab stop, and its keys work once it has the focus" {
@@ -440,4 +467,69 @@ test "the list is one Tab stop, and its keys work once it has the focus" {
     try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
     t.key(.end);
     try std.testing.expectEqual(state.proc_rows.len - 1, state.selectedRow().?);
+}
+
+test "Escape retraces the way in: search, then list, then sidebar" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.key(.tab); // Apps
+    t.key(.tab); // Processes
+    const nav = t.ctx.focus;
+    try std.testing.expectEqual(state.nav_ids.get(.processes), nav);
+    t.key(.enter); // into the list
+    t.settle(0.2);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus);
+    t.typeText("s"); // into the search
+    t.settle(0.2);
+    try std.testing.expect(t.ctx.focus_is_text);
+    try std.testing.expectEqualStrings("s", state.search.text());
+    t.key(.escape); // out of the search, which clears
+    t.settle(0.1);
+    try std.testing.expectEqual(state.list_id, t.ctx.focus);
+    try std.testing.expectEqualStrings("", state.search.text());
+    t.key(.escape); // out of the list
+    t.settle(0.1);
+    try std.testing.expectEqual(nav, t.ctx.focus);
+    t.key(.escape); // nowhere further to go
+    t.settle(0.1);
+    try std.testing.expectEqual(nav, t.ctx.focus);
+    try std.testing.expectEqual(@as(usize, 0), state.focus_stack.len);
+}
+
+test "Escape from a search returns to whatever was focused before it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.key(.tab); // Apps, in the sidebar
+    const apps_entry = t.ctx.focus;
+    try std.testing.expect(t.shortcut(.{ .key = 'f', .cmd = true }));
+    t.settle(0.2);
+    try std.testing.expect(t.ctx.focus_is_text);
+    t.key(.escape);
+    t.settle(0.1);
+    try std.testing.expectEqual(apps_entry, t.ctx.focus); // not the list: where it came from
+}
+
+test "a click forgets the way back" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.key(.tab);
+    t.key(.tab);
+    t.key(.enter);
+    t.settle(0.2);
+    try std.testing.expect(state.focus_stack.len > 0);
+    try t.clickText("Name");
+    t.settle(0.2);
+    try std.testing.expectEqual(@as(usize, 0), state.focus_stack.len);
 }

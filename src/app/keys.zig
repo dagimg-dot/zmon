@@ -6,6 +6,7 @@ const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const app = @import("state.zig");
+const focus = @import("focus.zig");
 
 const State = app.State;
 const Page = app.Page;
@@ -23,7 +24,10 @@ pub fn handle(c: *ui.Context, s: *State) void {
     // the list's keys still go to the list.
     const by_pointer = !s.keyboard and !c.input.pressed;
     // A click hides the focus ring again; a key shows it (focus-visible).
-    if (c.input.pressed) s.keyboard = false;
+    if (c.input.pressed) {
+        s.keyboard = false;
+        focus.forget(s);
+    }
     if (c.input.key != null or c.input.shortcut != null) s.keyboard = true;
     // Tab moves the focus before the view runs, so a move since the last
     // frame ended is the keyboard's.
@@ -40,19 +44,35 @@ pub fn handle(c: *ui.Context, s: *State) void {
     }
     if (withCtrl(c, .page_down)) cycle(s, 1);
     if (withCtrl(c, .page_up)) cycle(s, -1);
-    if (ctrl(c, 'f')) {
+    const in_search = c.focus != 0 and c.focus_is_text;
+    if (ctrl(c, 'f') and !in_search) {
+        focus.remember(c, s);
         if (!s.onList()) s.open(.processes);
         s.search.focus();
     }
-    if (s.onList()) list(c, s, by_pointer);
+    if (c.shortcut(.{ .key = S.escape }) or plain(c, .escape)) escape(c, s, in_search);
+    if (s.onList()) list(c, s, by_pointer, in_search);
+}
+
+/// Escape goes back one step through the focus stack. Leaving the search
+/// clears it, so no filter stays on unseen. With nothing to go back to, the
+/// search falls back to its list and anything else to the page's sidebar entry.
+fn escape(c: *ui.Context, s: *State, in_search: bool) void {
+    if (in_search) {
+        if (s.search.text().len > 0) {
+            s.search.clear();
+            s.rebuild();
+        }
+        return focus.back(c, s, s.list_id);
+    }
+    focus.back(c, s, s.nav_ids.get(s.page));
 }
 
 /// The list pages' keys: moving the selection, opening apps, ending a task,
 /// and typing to search. They belong to the list when it has the focus, or
 /// nothing has; when a button or the sidebar has it, Return presses that.
 /// The arrows also work from the search field, so a search can be walked.
-fn list(c: *ui.Context, s: *State, by_pointer: bool) void {
-    const in_search = c.focus != 0 and c.focus_is_text;
+fn list(c: *ui.Context, s: *State, by_pointer: bool, in_search: bool) void {
     const owns = c.focus == 0 or c.focus == s.list_id or (by_pointer and !in_search);
     if (!owns and !in_search) return;
     var moved = false;
@@ -75,14 +95,6 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool) void {
     // Moving from nowhere, or from where a click left the focus, puts it on
     // the list, where the ring shows it.
     if (moved and !in_search) c.focus = s.list_id;
-    if (c.shortcut(.{ .key = S.escape }) or plain(c, .escape)) {
-        if (s.search.text().len > 0) {
-            s.search.clear();
-            s.rebuild();
-        } else if (in_search) {
-            c.focus = s.list_id;
-        } else s.clearSelection();
-    }
     // Inside the search field these keys edit the text.
     if (in_search) return;
     if (plain(c, .home)) s.selectEnd(false);
@@ -94,6 +106,7 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool) void {
     // Typing on the list starts a search with what was typed.
     const typed = c.input.chars;
     if (typed.len > 0 and !c.input.ctrl and !c.input.alt and !c.input.cmd and typed[0] > ' ' and typed[0] != 0x7f) {
+        focus.remember(c, s);
         s.search.focus();
         const end = s.search.text().len;
         _ = s.search.insert(end, typed);

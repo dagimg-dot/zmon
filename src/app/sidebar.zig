@@ -38,7 +38,9 @@ fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8
     const row = ui.div(c).row().wFull().h(34).px(10).itemsCenter().gap(10).rounded(8).control();
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
-    if (controls.press(c, row, .{ .role = .tab, .label = label, .selected = on })) s.open(page);
+    const id = c.interact(row.index, .{}).id;
+    s.nav_ids.set(page, id);
+    if (controls.press(c, row, .{ .role = .tab, .label = label, .selected = on })) s.openFromSidebar(page, id);
     const ink = if (on) k.selected_text else k.text;
     ui.icon(c, icon, .{ .size = 14, .frame = 18, .color = ink });
     ui.text(c, label, .{ .size = 13.5, .weight = if (on) .semibold else .regular, .color = ink });
@@ -104,6 +106,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
     };
     for (tiles) |it| {
-        if (tile.draw(c, k, it.t, s.page == it.page)) s.open(it.page);
+        const t = tile.draw(c, k, it.t, s.page == it.page);
+        if (t.pressed) s.openFromSidebar(it.page, t.id);
+        s.nav_ids.set(it.page, t.id);
     }
 }

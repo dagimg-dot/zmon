@@ -15,7 +15,7 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 ```
 core/     module zmon-core: plain data and helpers. No OS calls, no nanoui.
-  types.zig ring.zig fmt.zig text.zig search.zig settings.zig (the settings and their file)
+  types.zig ring.zig fmt.zig text.zig search.zig focus.zig (the focus stack) settings.zig (the settings and their file)
   theme/      colours, a TOML subset, the theme model and resolver, builtin.zig  themes/ (one .toml per theme)
 system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui.
   platform/   quiet file reads              linux/  dummy/
@@ -26,7 +26,7 @@ system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
   app/        state.zig (lists, selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
-              keys.zig (shortcuts)  shortcuts.zig (their overlay)  confirm.zig (End task dialog)
+              keys.zig (shortcuts)  focus.zig (stepping in, Escape back)  shortcuts.zig (their overlay)  confirm.zig (End task dialog)
   ui/         theme.zig (palette to colours) controls.zig (press, button, switch, segmented) table.zig (sortable rows) app_icon.zig (an app's icon in a list) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
@@ -69,6 +69,7 @@ src/      the executable. The only place nanoui is imported.
   - Everything the mouse can do, the keyboard can. A new control goes through `controls.press`, so Tab reaches it, Space or Return presses it, and a screen reader is told its role, name and state. A list row gets `table.describeRow`.
   - Shortcuts live in `app/keys.zig` and are listed once, in `app/shortcuts.zig`, which draws the overlay; README's table follows it. Follow GNOME's conventions first (Ctrl+F, Ctrl+Q, Ctrl+?), and never take a key a focused text field needs (arrows left and right, Home, End, Delete).
   - Focus is drawn only after a key (`State.keyboard`), never after a click.
+  - Focus moves in and out through one stack (`core/focus.zig`, `app/focus.zig`). Any key that steps into something (a page from the sidebar, the search) remembers where the focus was, with `focus.stepIn` or `focus.remember`; Escape only ever calls `focus.back`. Never set `c.focus` for a step in without them, or Escape stops retracing the way in. A click clears the stack.
   - Text size, more contrast and reduced motion are settings, because nanoui's Linux backend doesn't read the desktop's. Layouts must survive Larger text (1.3x): truncate with an ellipsis rather than clip.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.
 - **Settings.**

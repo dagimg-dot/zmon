@@ -29,9 +29,10 @@ Every page, list and action has a key. Ctrl+? (or F1) shows them all in zmon.
 | Home, End | First or last row |
 | Right, Left | Show an app's processes; hide them, or go back to the app |
 | Delete | End task (Return confirms) |
-| Esc | Clear the search, then the selection |
+| Esc | Go back where you came from: out of the search (clearing it), the list, the page |
 | Any letter | Start a search |
 | Tab, Shift+Tab | Move between controls |
+| Return | On the sidebar, open that page and move into it |
 | Space or Return | Press the focused control |
 
 ## Accessibility

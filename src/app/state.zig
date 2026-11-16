@@ -58,6 +58,12 @@ pub const State = struct {
     shortcuts_open: bool = false,
     /// The last input was a key, so focus is drawn (a click hides it again).
     keyboard: bool = false,
+    /// Each page's entry in the sidebar, where Escape takes the focus back to.
+    nav_ids: std.EnumArray(Page, u64) = .initFill(0),
+    /// A page was opened from the keyboard: the focus goes into it once it is drawn.
+    focus_content: bool = false,
+    /// Where the keyboard's focus came from, for Escape to go back (app/focus.zig).
+    focus_stack: core.focus.Stack = .{},
     /// The box of the list on the page shown, the Tab stop that owns the list's keys.
     list_id: u64 = 0,
     /// The focused box when the last frame ended.
@@ -334,6 +340,16 @@ pub const State = struct {
         s.rebuild();
     }
 
+    /// Opens a page from its sidebar entry `from`. From the keyboard, the
+    /// focus follows into the page, as in a two-pane app, and Escape comes
+    /// back to the entry.
+    pub fn openFromSidebar(s: *State, page: Page, from: u64) void {
+        s.open(page);
+        if (!s.keyboard) return;
+        s.focus_stack.push(from);
+        s.focus_content = true;
+    }
+
     /// Opens a page. Settings reads the theme folder again as it opens.
     pub fn open(s: *State, page: Page) void {
         if (page == .settings and s.page != .settings) s.reload_themes = true;
@@ -426,10 +442,6 @@ pub const State = struct {
             .group => |gi| if (s.groups[gi].members.len > 1) s.toggle(s.groups[gi].root),
             .proc => {},
         }
-    }
-
-    pub fn clearSelection(s: *State) void {
-        if (s.page == .processes) s.selected_proc = 0 else s.selected_app = 0;
     }
 
     /// Asks before ending the selection when Settings says to, else ends it.

@@ -30,11 +30,12 @@ pub const groups = [_]Group{
         .{ .keys = &.{"→"}, .what = "Show an app's processes" },
         .{ .keys = &.{"←"}, .what = "Hide them, or go back to the app" },
         .{ .keys = &.{"Delete"}, .what = "End task (Return confirms)" },
-        .{ .keys = &.{"Esc"}, .what = "Clear the search, then the selection" },
+        .{ .keys = &.{"Esc"}, .what = "Go back where you came from" },
         .{ .keys = &.{"Type"}, .what = "Start a search" },
     } },
     .{ .title = "Everywhere", .items = &.{
         .{ .keys = &.{ "Tab", "Shift Tab" }, .what = "Move between controls" },
+        .{ .keys = &.{"Return"}, .what = "Open a page and go into it" },
         .{ .keys = &.{"Space"}, .what = "Press the focused control" },
     } },
 };

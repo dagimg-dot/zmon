@@ -24,8 +24,8 @@ pub const Tile = struct {
     window: usize = 60,
 };
 
-/// Draws the tile; true when it was clicked.
-pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) bool {
+/// Draws the tile; says whether it was pressed, and its box's id (for focus).
+pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) struct { pressed: bool, id: u64 } {
     ui.key(c, t.key);
     const box = ui.div(c).column().wFull().px(10).py(8).gap(3).rounded(10).control();
     defer box.end();
@@ -50,5 +50,5 @@ pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) bool {
         .grid = k.separator,
         .grid_lines = 0,
     });
-    return clicked;
+    return .{ .pressed = clicked, .id = c.interact(box.index, .{}).id };
 }
