@@ -7,7 +7,6 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const kit = nanoui.kit;
 const core = @import("zmon-core");
-const sampler = @import("sampler.zig");
 const system = @import("zmon-system");
 const apps = system.apps;
 const theme = @import("theme.zig");
@@ -27,7 +26,7 @@ pub const Row = union(enum) {
 
 pub const State = struct {
     gpa: std.mem.Allocator,
-    sampler: sampler.Sampler,
+    sampler: system.sampler.Sampler,
     index: apps.Index,
     icons: apps.Icons,
     /// Groups and rows of the current sample; replaced with every sample.
@@ -136,7 +135,7 @@ pub const State = struct {
         return rows.items;
     }
 
-    fn busier(procs: []const sampler.Proc, x: u32, y: u32) bool {
+    fn busier(procs: []const core.Proc, x: u32, y: u32) bool {
         if (procs[x].cpu != procs[y].cpu) return procs[x].cpu > procs[y].cpu;
         return procs[x].memory > procs[y].memory;
     }

@@ -2,8 +2,10 @@
 //! nanoui.
 pub const platform = @import("platform/root.zig");
 pub const apps = @import("apps/root.zig");
+pub const sampler = @import("sampler/root.zig");
 
 test {
     _ = platform;
     _ = apps;
+    _ = sampler;
 }

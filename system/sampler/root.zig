@@ -1,0 +1,207 @@
+//! Samples the machine: every process, the CPU (as a whole and per core), memory,
+//! disks, network and load. Each `collect` reads the counters the OS keeps through
+//! a backend and turns them into rates by comparing them with the previous sample.
+//! A short history of the totals is kept for the charts.
+const std = @import("std");
+const builtin = @import("builtin");
+const core = @import("zmon-core");
+
+const backend = switch (builtin.os.tag) {
+    .linux => @import("linux/root.zig"),
+    else => @import("dummy/root.zig"),
+};
+
+const Proc = core.Proc;
+const Memory = core.Memory;
+const Ring = core.Ring;
+const Cpu = backend.cpu.Times;
+
+pub const History = struct {
+    cpu: Ring(f32) = .{},
+    memory: Ring(f32) = .{},
+    disk_read: Ring(f32) = .{},
+    disk_write: Ring(f32) = .{},
+    net_in: Ring(f32) = .{},
+    net_out: Ring(f32) = .{},
+};
+
+const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
+
+pub const Sampler = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    /// Holds the current sample's names and processes.
+    arena: std.heap.ArenaAllocator,
+    reader: backend.process.Reader,
+    procs: []Proc = &.{},
+    cores: []f32 = &.{},
+    cpu_pct: f32 = 0,
+    memory: Memory = .{},
+    load: [3]f32 = .{ 0, 0, 0 },
+    uptime: f64 = 0,
+    disk_read_bps: f32 = 0,
+    disk_write_bps: f32 = 0,
+    net_in_bps: f32 = 0,
+    net_out_bps: f32 = 0,
+    threads: u32 = 0,
+    samples: u64 = 0,
+    history: History = .{},
+
+    hz: u64 = 100,
+    prev_time: f64 = 0,
+    prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
+    next_prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
+    prev_cpu: std.ArrayList(Cpu) = .empty,
+    prev_disk: [2]u64 = .{ 0, 0 },
+    prev_net: [2]u64 = .{ 0, 0 },
+
+    pub fn init(gpa: std.mem.Allocator, io: std.Io) Sampler {
+        return .{
+            .gpa = gpa,
+            .io = io,
+            .arena = .init(gpa),
+            .reader = .init(gpa),
+            .hz = backend.clockTicks(),
+        };
+    }
+
+    pub fn deinit(s: *Sampler) void {
+        s.arena.deinit();
+        s.reader.deinit();
+        s.gpa.free(s.cores);
+        s.prev.deinit(s.gpa);
+        s.next_prev.deinit(s.gpa);
+        s.prev_cpu.deinit(s.gpa);
+    }
+
+    /// Reads everything. `now` is a clock in seconds; rates are over the
+    /// time since the last call.
+    pub fn collect(s: *Sampler, now: f64) void {
+        const dt = @max(now - s.prev_time, 0.001);
+        const first = s.samples == 0;
+        _ = s.arena.reset(.retain_capacity);
+        s.collectProcs(dt, first);
+        s.collectCpu();
+        s.memory = backend.memory.read(s.io);
+        s.collectDisk(dt, first);
+        s.collectNet(dt, first);
+        const l = backend.load.read(s.io);
+        s.load = l.avg;
+        s.uptime = l.uptime;
+        s.prev_time = now;
+        s.samples += 1;
+        s.history.cpu.push(s.cpu_pct);
+        s.history.memory.push(if (s.memory.total > 0)
+            @as(f32, @floatFromInt(s.memory.used())) * 100 / @as(f32, @floatFromInt(s.memory.total))
+        else
+            0);
+        s.history.disk_read.push(s.disk_read_bps);
+        s.history.disk_write.push(s.disk_write_bps);
+        s.history.net_in.push(s.net_in_bps);
+        s.history.net_out.push(s.net_out_bps);
+    }
+
+    /// The process with this pid in the current sample.
+    pub fn find(s: *const Sampler, pid: i32) ?*const Proc {
+        for (s.procs) |*p| if (p.pid == pid) return p;
+        return null;
+    }
+
+    fn collectProcs(s: *Sampler, dt: f64, first: bool) void {
+        const a = s.arena.allocator();
+        var list: std.ArrayList(Proc) = .empty;
+        s.reader.scan(s.io, a, &list);
+        s.next_prev.clearRetainingCapacity();
+        s.threads = 0;
+        for (list.items) |*p| {
+            s.threads += p.threads;
+            if (s.prev.get(p.pid)) |old| {
+                if (old.start == p.start and !first) {
+                    const ticks = p.cpu_ticks -| old.ticks;
+                    p.cpu = @floatCast(@as(f64, @floatFromInt(ticks)) * 100.0 / (@as(f64, @floatFromInt(s.hz)) * dt));
+                    if (p.io_known) {
+                        const bytes = (p.disk_read -| old.read) + (p.disk_write -| old.write);
+                        p.disk_bps = @floatCast(@as(f64, @floatFromInt(bytes)) / dt);
+                    }
+                }
+            }
+            s.next_prev.put(s.gpa, p.pid, .{ .ticks = p.cpu_ticks, .start = p.start, .read = p.disk_read, .write = p.disk_write }) catch {};
+        }
+        std.mem.swap(@TypeOf(s.prev), &s.prev, &s.next_prev);
+        s.procs = list.items;
+    }
+
+    fn collectCpu(s: *Sampler) void {
+        var now_cpu: [257]Cpu = undefined;
+        const n = backend.cpu.read(s.io, &now_cpu);
+        if (n == 0) return;
+        if (s.prev_cpu.items.len == n) {
+            s.cpu_pct = percent(s.prev_cpu.items[0], now_cpu[0]);
+            if (s.cores.len != n - 1) {
+                s.gpa.free(s.cores);
+                s.cores = s.gpa.alloc(f32, n - 1) catch &.{};
+            }
+            for (s.cores, 1..) |*c, i| c.* = percent(s.prev_cpu.items[i], now_cpu[i]);
+        }
+        s.prev_cpu.clearRetainingCapacity();
+        s.prev_cpu.appendSlice(s.gpa, now_cpu[0..n]) catch {};
+    }
+
+    fn collectDisk(s: *Sampler, dt: f64, first: bool) void {
+        const now_disk = backend.disk.read(s.io);
+        if (!first) {
+            s.disk_read_bps = rate(now_disk[0], s.prev_disk[0], dt);
+            s.disk_write_bps = rate(now_disk[1], s.prev_disk[1], dt);
+        }
+        s.prev_disk = now_disk;
+    }
+
+    fn collectNet(s: *Sampler, dt: f64, first: bool) void {
+        const now_net = backend.network.read(s.io);
+        if (!first) {
+            s.net_in_bps = rate(now_net[0], s.prev_net[0], dt);
+            s.net_out_bps = rate(now_net[1], s.prev_net[1], dt);
+        }
+        s.prev_net = now_net;
+    }
+};
+
+fn rate(now: u64, before: u64, dt: f64) f32 {
+    return @floatCast(@as(f64, @floatFromInt(now -| before)) / dt);
+}
+
+fn percent(before: Cpu, now: Cpu) f32 {
+    const total = now.total -| before.total;
+    if (total == 0) return 0;
+    return @floatCast(@as(f64, @floatFromInt(now.busy -| before.busy)) * 100.0 / @as(f64, @floatFromInt(total)));
+}
+
+test "a share of the ticks between two reads is a percentage" {
+    try std.testing.expectApproxEqAbs(@as(f32, 50), percent(.{ .busy = 0, .total = 0 }, .{ .busy = 50, .total = 100 }), 0.001);
+    try std.testing.expectEqual(@as(f32, 0), percent(.{ .busy = 5, .total = 10 }, .{ .busy = 5, .total = 10 }));
+    try std.testing.expectApproxEqAbs(@as(f32, 1000), rate(2000, 1000, 1.0), 0.001);
+}
+
+test {
+    _ = backend;
+}
+
+test "the live machine: this test process is found, and the totals are sane" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    const procfs = @import("../platform/root.zig").files;
+    var s = Sampler.init(std.testing.allocator, std.testing.io);
+    defer s.deinit();
+    s.collect(1.0);
+    s.collect(2.0);
+    try std.testing.expect(s.procs.len > 1);
+    const me = s.find(std.os.linux.getpid()) orelse return error.TestUnexpectedResult;
+    // Names are real names, not leftovers of the buffers they were read through.
+    try std.testing.expect(me.name.len > 0 and !std.ascii.isDigit(me.name[0]));
+    var comm: [64]u8 = undefined;
+    const kernel_name = std.mem.trimEnd(u8, try procfs.read(std.testing.io, .cwd(), "/proc/self/comm", &comm), "\n");
+    try std.testing.expect(std.mem.startsWith(u8, me.name, kernel_name));
+    try std.testing.expect(s.memory.total > 0);
+    try std.testing.expect(s.cores.len > 0);
+    try std.testing.expect(s.cpu_pct >= 0 and s.cpu_pct <= 100.5);
+    try std.testing.expectEqual(@as(usize, 2), s.history.cpu.len);
+}
