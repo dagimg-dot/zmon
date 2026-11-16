@@ -56,6 +56,8 @@ pub const Sampler = struct {
     history: History = .{},
 
     hz: u64 = 100,
+    machine_buf: [128]u8 = undefined,
+    machine_len: usize = 0,
     prev_time: f64 = 0,
     prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
     next_prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
@@ -64,13 +66,20 @@ pub const Sampler = struct {
     prev_net: [2]u64 = .{ 0, 0 },
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io) Sampler {
-        return .{
+        var s: Sampler = .{
             .gpa = gpa,
             .io = io,
             .arena = .init(gpa),
             .reader = .init(gpa),
             .hz = backend.clockTicks(),
         };
+        s.machine_len = backend.machine.name(io, &s.machine_buf).len;
+        return s;
+    }
+
+    /// What the machine is called, read once at start; "" when nothing says.
+    pub fn machine(s: *const Sampler) []const u8 {
+        return s.machine_buf[0..s.machine_len];
     }
 
     pub fn deinit(s: *Sampler) void {
@@ -202,6 +211,7 @@ test "the sampler and its backend compile on every OS" {
     std.testing.refAllDecls(backend.disk);
     std.testing.refAllDecls(backend.network);
     std.testing.refAllDecls(backend.load);
+    std.testing.refAllDecls(backend.machine);
     std.testing.refAllDecls(Sampler);
 }
 

@@ -66,6 +66,13 @@ pub const network = struct {
     }
 };
 
+pub const machine = struct {
+    pub fn name(io: std.Io, out: []u8) []const u8 {
+        _ = .{ io, out };
+        return "";
+    }
+};
+
 pub const load = struct {
     pub const Load = struct { avg: [3]f32 = .{ 0, 0, 0 }, uptime: f64 = 0 };
     pub fn read(io: std.Io) Load {
