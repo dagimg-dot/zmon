@@ -27,5 +27,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
     ui.text(c, c.print("{d} running, {d} threads", .{ s.sampler.procs.len, s.sampler.threads }), .{ .size = 12.5, .color = k.secondary });
     ui.spacer(c);
     const t = s.target();
-    if (kit.button(c, "End task", .{ .variant = .outline, .size = .sm, .disabled = t == null }).clicked) s.confirm = true;
+    if (kit.button(c, "End task", .{ .variant = .outline, .size = .sm, .disabled = t == null }).clicked) {
+        if (s.settings.confirm_end_task) s.confirm = true else s.endTask(false);
+    }
 }

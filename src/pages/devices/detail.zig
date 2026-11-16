@@ -15,22 +15,23 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
     const col = ui.div(c).column().wFull().grow().h(0).p(24).gap(18).scrollY();
     defer col.end();
     const h = &s.sampler.history;
+    const span = s.settings.span.seconds();
     switch (s.page) {
-        .processes => {},
+        .processes, .settings => {},
         .cpu => {
             const machine = s.sampler.machine();
             heading(c, k, "CPU", if (machine.len > 0) machine else c.print("{d} cores", .{s.sampler.cores.len}));
-            charts.area(c, &h.cpu, .{ .height = 220, .max = 100, .color = k.text, .grid = k.separator });
+            charts.area(c, &h.cpu, .{ .height = 220, .max = 100, .window = span, .color = k.cpu, .grid = k.separator });
             stats.cpu(c, s, k);
         },
         .memory => {
             heading(c, k, "Memory", "");
-            charts.area(c, &h.memory, .{ .height = 220, .max = 100, .color = k.text, .grid = k.separator });
+            charts.area(c, &h.memory, .{ .height = 220, .max = 100, .window = span, .color = k.memory, .grid = k.separator });
             stats.memory(c, s, k);
         },
         .disk => {
             heading(c, k, "Disk", "reads solid, writes lighter");
-            charts.area(c, &h.disk_read, .{ .height = 220, .floor = 256 * 1024, .color = k.text, .grid = k.separator, .second = &h.disk_write });
+            charts.area(c, &h.disk_read, .{ .height = 220, .floor = 256 * 1024, .window = span, .color = k.disk, .grid = k.separator, .second = &h.disk_write });
             var b: [2][24]u8 = undefined;
             const r = ui.div(c).row().wFull().gap(28);
             defer r.end();
@@ -39,7 +40,7 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
         },
         .network => {
             heading(c, k, "Network", "download solid, upload lighter");
-            charts.area(c, &h.net_in, .{ .height = 220, .floor = 64 * 1024, .color = k.text, .grid = k.separator, .second = &h.net_out });
+            charts.area(c, &h.net_in, .{ .height = 220, .floor = 64 * 1024, .window = span, .color = k.network, .grid = k.separator, .second = &h.net_out });
             var b: [2][24]u8 = undefined;
             const r = ui.div(c).row().wFull().gap(28);
             defer r.end();

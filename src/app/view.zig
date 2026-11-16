@@ -7,16 +7,22 @@ const theme = @import("../ui/theme.zig");
 const processes = @import("../pages/processes/root.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
+const settings_page = @import("../pages/settings/root.zig");
 
 const State = state.State;
 
 pub fn view(s: *State, c: *ui.Context) void {
-    const dark = s.dark orelse nanoui.isDark();
-    // The window takes its font from the theme the view *chose*, not from `c.theme`.
-    const chosen = theme.theme(dark);
+    if (s.reload_themes) {
+        s.reload_themes = false;
+        s.reloadThemes();
+    }
+    const dark = s.isDark(nanoui.isDark());
+    const k = theme.colors(s.theme(dark), s.settings.colored_graphs);
+    // nanoui draws widgets from c.theme; the window's font comes from the
+    // window's own theme (main.zig), and c.theme_chosen keeps them in step.
+    const chosen = theme.uiTheme(k);
     c.theme = chosen;
     c.theme_chosen = chosen;
-    const k = theme.colors(dark);
     c.frameIn(s.tick(c.time));
 
     const root = ui.div(c).row().sizeFull().bg(k.page);
@@ -29,6 +35,7 @@ pub fn view(s: *State, c: *ui.Context) void {
         switch (s.page) {
             .processes => processes.page(c, s, k),
             .cpu, .memory, .disk, .network => devices.page(c, s, k),
+            .settings => settings_page.page(c, s, k),
         }
     }
     processes.confirmDialog(c, s);

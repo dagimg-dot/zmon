@@ -18,7 +18,7 @@ fn tester(t: *ui.Tester, state: *app_state.State) !void {
 }
 
 test "Processes lists the machine's apps and background processes" {
-    var state: app_state.State = .init(std.testing.allocator, std.testing.io);
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
@@ -31,7 +31,7 @@ test "Processes lists the machine's apps and background processes" {
 }
 
 test "a device tile in the sidebar opens that device's page" {
-    var state: app_state.State = .init(std.testing.allocator, std.testing.io);
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
@@ -48,7 +48,7 @@ test "a device tile in the sidebar opens that device's page" {
 }
 
 test "clicking a column header sorts, and again reverses" {
-    var state: app_state.State = .init(std.testing.allocator, std.testing.io);
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
@@ -65,7 +65,7 @@ test "clicking a column header sorts, and again reverses" {
 }
 
 test "collapsing a group at the end of the list does not read past the rows" {
-    var state: app_state.State = .init(std.testing.allocator, std.testing.io);
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
     var t: ui.Tester = undefined;
@@ -87,4 +87,111 @@ test "collapsing a group at the end of the list does not read past the rows" {
     t.doubleClick(again.x + again.w / 2, again.y + again.h / 2); // close it: far fewer rows
     t.settle(0.3);
     try std.testing.expect(!state.expanded.contains(0));
+}
+
+/// Scrolls the page until the text `s` is inside the window, whichever sign the wheel uses.
+fn reveal(t: *ui.Tester, s: []const u8) !void {
+    var dy: f32 = -200;
+    var last: f32 = std.math.inf(f32);
+    for (0..40) |_| {
+        const r = t.findText(s) orelse return error.TextNotFound;
+        if (r.y >= 0 and r.y + r.h <= 740) return;
+        if (r.y >= last) dy = -dy; // it didn't come closer: the wheel goes the other way
+        last = r.y;
+        t.scroll(700, 400, dy);
+        t.settle(0.3);
+    }
+    return error.TextNotFound;
+}
+
+fn openSettings(t: *ui.Tester, state: *app_state.State) !void {
+    try t.clickText("Settings"); // the sidebar's row comes before the page's title
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.settings, state.page);
+}
+
+test "Settings opens from the sidebar, and a theme card becomes the light theme" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    try std.testing.expect(t.hasText("Appearance"));
+    try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
+    try t.clickText("Catppuccin Latte");
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("catppuccin-latte", state.settings.light_theme.slice());
+    try std.testing.expectEqualStrings("catppuccin-latte", state.theme(false).id);
+    try std.testing.expectEqualStrings("graphite-dark", state.settings.dark_theme.slice());
+}
+
+test "choosing Dark shows the dark themes and uses the dark one" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    try t.clickText("Dark");
+    t.settle(0.2);
+    try std.testing.expectEqual(.dark, state.settings.appearance);
+    try std.testing.expect(state.isDark(false));
+    try std.testing.expect(t.hasText("Dark theme"));
+    try std.testing.expect(t.hasText("Graphite Dark"));
+    try std.testing.expect(!t.hasText("Graphite Light"));
+}
+
+test "under Match system the gallery switches between dark and light themes" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    try std.testing.expect(t.hasText("Light theme"));
+    try t.clickText("When it's dark");
+    t.settle(0.2);
+    try std.testing.expect(t.hasText("Dark theme"));
+    try t.clickText("Nord");
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("nord", state.settings.dark_theme.slice());
+    try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
+}
+
+test "turning off the system's own tasks takes Kernel threads off the list" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    try reveal(&t, "Show the system's own tasks");
+    try t.clickText("Show the system's own tasks");
+    t.settle(0.2);
+    try std.testing.expect(!state.settings.show_kernel_threads);
+    for (state.rows) |row| switch (row) {
+        .group => |gi| try std.testing.expect(state.groups[gi].kind != .kernel),
+        else => {},
+    };
+}
+
+test "Reset to defaults brings back Graphite and the default switches" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    state.chooseTheme(false, "nord-light");
+    state.settings.colored_graphs = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try openSettings(&t, &state);
+    try reveal(&t, "Reset to defaults");
+    try t.clickText("Reset to defaults");
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
+    try std.testing.expect(state.settings.colored_graphs);
 }

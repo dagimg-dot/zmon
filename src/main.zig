@@ -14,13 +14,16 @@ pub fn main(init: nanoui.Init) !void {
     if (!fonts.register()) std.log.warn("couldn't load the bundled Lexend font; using the system's", .{});
     const app = try nanoui.App.create(init, .{ .name = "zmon" });
     defer app.destroy();
-    var state: app_state.State = .init(init.gpa, init.io);
+    var arena: std.heap.ArenaAllocator = .init(init.gpa);
+    defer arena.deinit();
+    const system = @import("zmon-system");
+    var state: app_state.State = .init(init.gpa, init.io, system.config.location(arena.allocator()));
     defer state.deinit();
     _ = try app.newWindow(.{
         .title = "zmon",
         .width = 1180,
         .height = 760,
-        .theme = theme.theme(nanoui.isDark()),
+        .theme = theme.uiTheme(theme.colors(state.theme(state.isDark(nanoui.isDark())), true)),
         .content = .{ .view = .init(&state, app_view.view) },
     });
     try app.run();

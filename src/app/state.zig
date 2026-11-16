@@ -1,5 +1,6 @@
-//! zmon's state: what is selected, how the list is sorted, and the sample the
-//! pages show. The sampler runs from the view's clock, once a second.
+//! zmon's state: what is selected, how the list is sorted, the sample the
+//! pages show, the settings and the themes. The sampler runs from the view's
+//! clock, once a second.
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
@@ -9,7 +10,7 @@ const system = @import("zmon-system");
 const apps = system.apps;
 
 /// The page shown: the process list, or one device's page.
-pub const Page = enum { processes, cpu, memory, disk, network };
+pub const Page = enum { processes, cpu, memory, disk, network, settings };
 pub const Sort = enum { name, cpu, memory, disk };
 
 /// What one line of the process list shows.
@@ -44,20 +45,107 @@ pub const State = struct {
     /// Overrides the system's light or dark setting (tests, screenshots).
     dark: ?bool = null,
 
-    pub fn init(gpa: std.mem.Allocator, io: std.Io) State {
+    io: std.Io,
+    settings: core.settings.Settings = .{},
+    themes: core.themes.Library,
+    /// Where settings are saved and themes added; null in tests, which then
+    /// neither read nor write anything.
+    config: ?system.config.Location = null,
+    config_arena: std.heap.ArenaAllocator,
+    /// Themes are read again when Settings opens, at the start of the next frame.
+    reload_themes: bool = false,
+    /// Which kind of theme the gallery shows when zmon follows the system (null: the one in effect).
+    gallery_dark: ?bool = null,
+    /// A failed save is said once, not on every change.
+    save_failed: bool = false,
+
+    pub fn init(gpa: std.mem.Allocator, io: std.Io, config: ?system.config.Location) State {
         var s: State = .{
             .gpa = gpa,
+            .io = io,
             .sampler = .init(gpa, io),
             .index = .init(gpa),
             .icons = .init(gpa, io),
             .built = .init(gpa),
             .toaster = .{ .gpa = gpa },
+            .themes = .init(gpa),
+            .config_arena = .init(gpa),
         };
         apps.loadEntries(&s.index, io);
+        if (config) |at| {
+            const a = s.config_arena.allocator();
+            s.config = .{ .dir = a.dupe(u8, at.dir) catch "", .themes = a.dupe(u8, at.themes) catch "" };
+            s.settings = system.config.loadSettings(io, a, at);
+        }
+        s.loadThemes(&s.themes);
         return s;
     }
 
+    /// The built-in themes, then a person's own from their theme folder.
+    fn loadThemes(s: *State, lib: *core.themes.Library) void {
+        core.themes.builtin.addAll(lib);
+        if (s.config) |at| {
+            for (system.config.userThemes(s.io, lib.arena.allocator(), at)) |t| lib.add(t.id, t.text);
+        }
+        lib.resolveAll();
+    }
+
+    /// Reads the theme files again. Called at the start of a frame, so nothing
+    /// drawn still points into the old themes.
+    pub fn reloadThemes(s: *State) void {
+        var fresh: core.themes.Library = .init(s.gpa);
+        s.loadThemes(&fresh);
+        s.themes.deinit();
+        s.themes = fresh;
+    }
+
+    /// Whether zmon shows its dark theme now.
+    pub fn isDark(s: *const State, system_dark: bool) bool {
+        if (s.dark) |d| return d;
+        return switch (s.settings.appearance) {
+            .system => system_dark,
+            .light => false,
+            .dark => true,
+        };
+    }
+
+    /// The theme chosen for dark or light, or Graphite when that theme is gone.
+    pub fn theme(s: *const State, dark: bool) *const core.themes.Theme {
+        const id = if (dark) s.settings.dark_theme.slice() else s.settings.light_theme.slice();
+        return s.themes.find(id) orelse s.themes.find(if (dark) "graphite-dark" else "graphite-light") orelse &s.themes.themes.items[0];
+    }
+
+    /// Whether the chosen theme for dark or light is missing (and Graphite stands in).
+    pub fn themeMissing(s: *const State, dark: bool) bool {
+        const id = if (dark) s.settings.dark_theme.slice() else s.settings.light_theme.slice();
+        return s.themes.find(id) == null;
+    }
+
+    pub fn chooseTheme(s: *State, dark: bool, id: []const u8) void {
+        if (dark) s.settings.dark_theme.set(id) else s.settings.light_theme.set(id);
+        s.save();
+    }
+
+    /// Writes the settings, if there is somewhere to write them.
+    pub fn save(s: *State) void {
+        const at = s.config orelse return;
+        system.config.saveSettings(s.io, at, &s.settings) catch {
+            if (!s.save_failed) s.toaster.push(.{ .title = "Couldn't save your settings", .message = "They apply until zmon closes." });
+            s.save_failed = true;
+            return;
+        };
+        s.save_failed = false;
+    }
+
+    pub fn resetSettings(s: *State) void {
+        s.settings = .{};
+        s.save();
+        s.rebuild();
+    }
+
     pub fn deinit(s: *State) void {
+        s.themes.deinit();
+        s.config_arena.deinit();
         s.toaster.deinit();
         s.expanded.deinit(s.gpa);
         s.built.deinit();
@@ -114,6 +202,7 @@ pub const State = struct {
         const titles = [_][]const u8{ "Apps", "Background processes", "Kernel" };
         var kind: ?apps.Kind = null;
         for (s.groups, 0..) |g, gi| {
+            if (g.kind == .kernel and !s.settings.show_kernel_threads) continue;
             if (kind == null or kind.? != g.kind) {
                 kind = g.kind;
                 var count: usize = 0;

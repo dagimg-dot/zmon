@@ -38,7 +38,7 @@ pub fn cpu(c: *ui.Context, s: *State, k: theme.Colors) void {
         const track = ui.div(c).column().wFull().h(64).justifyEnd().rounded(4).bg(k.panel);
         {
             defer track.end();
-            const fill = ui.div(c).wFull().h(@max(2, 64 * v / 100)).rounded(4).bg(k.text);
+            const fill = ui.div(c).wFull().h(@max(2, 64 * v / 100)).rounded(4).bg(k.cpu);
             fill.end();
         }
         ui.text(c, c.print("{d}", .{i}), .{ .size = 10.5, .color = k.tertiary });

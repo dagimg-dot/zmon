@@ -18,6 +18,9 @@ pub const Tile = struct {
     /// The top of the chart; null scales to the history, never below `floor`.
     max: ?f32 = null,
     floor: f32 = 1,
+    /// The graph's colour, and how many samples it spans.
+    color: nanoui.ui.Color,
+    window: usize = 60,
 };
 
 /// Draws the tile; true when it was clicked.
@@ -41,7 +44,8 @@ pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) bool {
         .max = t.max,
         .floor = t.floor,
         .second = t.second,
-        .color = if (on) k.text else k.secondary,
+        .color = if (on) t.color else t.color.mix(k.panel, 0.25),
+        .window = t.window,
         .grid = k.separator,
         .grid_lines = 0,
     });

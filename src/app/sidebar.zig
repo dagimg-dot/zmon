@@ -23,6 +23,7 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     section(c, k, "Devices");
     devices(c, s, k);
     ui.spacer(c);
+    nav(c, s, k, .settings, "Settings", "gearshape");
     var b: [2][32]u8 = undefined;
     const r = ui.div(c).row().wFull().px(8).pt(10);
     defer r.end();
@@ -35,7 +36,10 @@ fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8
     const row = ui.div(c).row().wFull().h(34).px(10).itemsCenter().gap(10).rounded(8).control();
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
-    if (row.clicked()) s.page = page;
+    if (row.clicked()) {
+        if (page == .settings and s.page != .settings) s.reload_themes = true;
+        s.page = page;
+    }
     const ink = if (on) k.selected_text else k.text;
     ui.icon(c, icon, .{ .size = 14, .frame = 18, .color = ink });
     ui.text(c, label, .{ .size = 13.5, .weight = if (on) .semibold else .regular, .color = ink });
@@ -55,6 +59,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
     const tiles = [_]struct { page: Page, t: tile.Tile }{
         .{ .page = .cpu, .t = .{
             .key = "tile-cpu",
+            .color = k.cpu,
+            .window = s.settings.span.seconds(),
             .icon = "cpu",
             .title = "CPU",
             .value = fmt.own(c.alloc(), fmt.percent(&b[0], smp.cpu_pct)),
@@ -64,6 +70,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
         .{ .page = .memory, .t = .{
             .key = "tile-memory",
+            .color = k.memory,
+            .window = s.settings.span.seconds(),
             .icon = "memorychip",
             .title = "Memory",
             .value = fmt.own(c.alloc(), fmt.percent(&b[1], h.memory.at(h.memory.len -| 1))),
@@ -73,6 +81,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
         .{ .page = .disk, .t = .{
             .key = "tile-disk",
+            .color = k.disk,
+            .window = s.settings.span.seconds(),
             .icon = "internaldrive",
             .title = "Disk",
             .value = fmt.own(c.alloc(), fmt.rate(&b[0], smp.disk_read_bps + smp.disk_write_bps)),
@@ -83,6 +93,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
         .{ .page = .network, .t = .{
             .key = "tile-network",
+            .color = k.network,
+            .window = s.settings.span.seconds(),
             .icon = "network",
             .title = "Network",
             .value = fmt.own(c.alloc(), fmt.rate(&b[3], smp.net_in_bps + smp.net_out_bps)),
