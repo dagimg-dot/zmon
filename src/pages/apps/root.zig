@@ -27,6 +27,9 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     toolbar(c, s, k);
     const sorted = std.mem.indexOfScalar(app.Sort, keys[0..4], s.app_order.key) orelse 0;
     if (table.header(c, k, &columns, sorted, s.app_order.ascending)) |i| s.sortBy(keys[i]);
+    const list = table.box(c, "apps-list");
+    defer list.div.end();
+    s.list_id = list.id;
     if (s.app_rows.len == 0) {
         const query = s.search.text();
         return table.empty(c, k, if (query.len > 0) c.print("No app matches \"{s}\".", .{query}) else "No apps are open.");
@@ -65,6 +68,7 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
     const it = r.interaction();
     if (it.clicked) {
         s.selected_app = g.root;
+        c.focus = s.list_id; // the keyboard carries on in the list
         c.changed = true;
     }
     if (it.double_clicked and g.members.len > 1) s.pending_toggle = g.root;
@@ -98,6 +102,7 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, i: usize) v
     defer r.end();
     if (r.interaction().clicked) {
         s.selected_app = p.pid;
+        c.focus = s.list_id;
         c.changed = true;
     }
     const ink = table.ink(k, sel);

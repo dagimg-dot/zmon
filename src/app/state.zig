@@ -58,6 +58,8 @@ pub const State = struct {
     shortcuts_open: bool = false,
     /// The last input was a key, so focus is drawn (a click hides it again).
     keyboard: bool = false,
+    /// The box of the list on the page shown, the Tab stop that owns the list's keys.
+    list_id: u64 = 0,
     /// The focused box when the last frame ended.
     last_focus: u64 = 0,
     /// Settings turned reduced motion on, over whatever the system said.

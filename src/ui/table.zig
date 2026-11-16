@@ -111,6 +111,18 @@ pub fn ink(k: theme.Colors, selected: bool) Ink {
         .{ .text = k.text, .faint = k.secondary };
 }
 
+/// The box a list sits in, one Tab stop for the whole list as a grid is:
+/// Tab reaches it once and the keys move inside it. End `div` after the list.
+pub const Box = struct { div: ui.Div, id: u64 };
+
+pub fn box(c: *ui.Context, key: []const u8) Box {
+    ui.key(c, key);
+    // Inset by the ring's width and clipped, so rows never paint over the ring.
+    const d = ui.div(c).column().wFull().grow().h(0).p(2).rounded(8).clip();
+    const it = c.interact(d.index, .{ .focusable = true });
+    return .{ .div = d, .id = it.id };
+}
+
 /// Opens a virtualized list of `count` rows, scrolled so that row `reveal`
 /// (the keyboard's new selection) is in view.
 pub fn list(c: *ui.Context, count: usize, reveal: ?usize) ui.ListRows {

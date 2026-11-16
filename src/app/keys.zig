@@ -19,6 +19,9 @@ const numbered = [_]Page{ .apps, .processes, .cpu, .memory, .disk, .network };
 const page_rows = 15;
 
 pub fn handle(c: *ui.Context, s: *State) void {
+    // Focus a click left behind (on the sidebar, say) isn't the keyboard's:
+    // the list's keys still go to the list.
+    const by_pointer = !s.keyboard and !c.input.pressed;
     // A click hides the focus ring again; a key shows it (focus-visible).
     if (c.input.pressed) s.keyboard = false;
     if (c.input.key != null or c.input.shortcut != null) s.keyboard = true;
@@ -41,23 +44,43 @@ pub fn handle(c: *ui.Context, s: *State) void {
         if (!s.onList()) s.open(.processes);
         s.search.focus();
     }
-    if (s.onList()) list(c, s);
+    if (s.onList()) list(c, s, by_pointer);
 }
 
 /// The list pages' keys: moving the selection, opening apps, ending a task,
-/// and typing to search.
-fn list(c: *ui.Context, s: *State) void {
+/// and typing to search. They belong to the list when it has the focus, or
+/// nothing has; when a button or the sidebar has it, Return presses that.
+/// The arrows also work from the search field, so a search can be walked.
+fn list(c: *ui.Context, s: *State, by_pointer: bool) void {
     const in_search = c.focus != 0 and c.focus_is_text;
-    if (arrow(c, S.down, .down)) s.moveSelection(1);
-    if (arrow(c, S.up, .up)) s.moveSelection(-1);
-    if (plain(c, .page_down)) s.moveSelection(page_rows);
-    if (plain(c, .page_up)) s.moveSelection(-page_rows);
+    const owns = c.focus == 0 or c.focus == s.list_id or (by_pointer and !in_search);
+    if (!owns and !in_search) return;
+    var moved = false;
+    if (arrow(c, S.down, .down)) {
+        s.moveSelection(1);
+        moved = true;
+    }
+    if (arrow(c, S.up, .up)) {
+        s.moveSelection(-1);
+        moved = true;
+    }
+    if (plain(c, .page_down)) {
+        s.moveSelection(page_rows);
+        moved = true;
+    }
+    if (plain(c, .page_up)) {
+        s.moveSelection(-page_rows);
+        moved = true;
+    }
+    // Moving from nowhere, or from where a click left the focus, puts it on
+    // the list, where the ring shows it.
+    if (moved and !in_search) c.focus = s.list_id;
     if (c.shortcut(.{ .key = S.escape }) or plain(c, .escape)) {
         if (s.search.text().len > 0) {
             s.search.clear();
             s.rebuild();
         } else if (in_search) {
-            c.focus = 0;
+            c.focus = s.list_id;
         } else s.clearSelection();
     }
     // Inside the search field these keys edit the text.

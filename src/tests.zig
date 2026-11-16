@@ -400,3 +400,44 @@ test "Settings puts the theme gallery after the other settings, with no gap afte
     const next = t.findText("Your themes") orelse return error.TextNotFound;
     try std.testing.expect(next.y - (desc.y + desc.h) < 80);
 }
+
+test "Return presses the focused sidebar item on a list page, not the list" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.key(.tab); // Apps
+    t.key(.tab); // Processes
+    t.key(.enter);
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
+    t.setMods(.{ .shift = true });
+    t.key(.tab); // back to Apps
+    t.setMods(.{});
+    t.key(.enter);
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.apps, state.page);
+}
+
+test "the list is one Tab stop, and its keys work once it has the focus" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try t.clickText("Processes");
+    t.settle(0.2);
+    if (state.proc_rows.len < 2) return error.SkipZigTest;
+    var steps: usize = 0;
+    while (t.ctx.focus != state.list_id) : (steps += 1) {
+        if (steps > 40) return error.ListNeverFocused;
+        t.key(.tab);
+    }
+    t.key(.down);
+    try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    t.key(.end);
+    try std.testing.expectEqual(state.proc_rows.len - 1, state.selectedRow().?);
+}

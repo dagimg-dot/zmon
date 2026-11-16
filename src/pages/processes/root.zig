@@ -27,6 +27,9 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     toolbar(c, s, k);
     const sorted = std.mem.indexOfScalar(app.Sort, keys[0..5], s.proc_order.key) orelse 0;
     if (table.header(c, k, &columns, sorted, s.proc_order.ascending)) |i| s.sortBy(keys[i]);
+    const list = table.box(c, "processes-list");
+    defer list.div.end();
+    s.list_id = list.id;
     if (s.proc_rows.len == 0) {
         const query = s.search.text();
         return table.empty(c, k, if (query.len > 0) c.print("No process matches \"{s}\".", .{query}) else "No processes.");
@@ -56,6 +59,7 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, index: u32, i: usize) voi
     defer r.end();
     if (r.interaction().clicked) {
         s.selected_proc = p.pid;
+        c.focus = s.list_id;
         c.changed = true;
     }
     const ink = table.ink(k, sel);
