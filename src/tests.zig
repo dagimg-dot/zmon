@@ -19,3 +19,8 @@ test "Increment counts up; Reset goes back to 0" {
     t.settle(0.2);
     try std.testing.expectEqual(@as(i64, 0), state.count);
 }
+
+test {
+    _ = @import("procfs.zig");
+    _ = @import("sampler.zig");
+}
