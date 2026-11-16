@@ -5,6 +5,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const core = @import("zmon-core");
+const platform = @import("../platform/root.zig");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("linux/root.zig"),
@@ -89,6 +90,12 @@ pub const Sampler = struct {
         s.prev.deinit(s.gpa);
         s.next_prev.deinit(s.gpa);
         s.prev_cpu.deinit(s.gpa);
+    }
+
+    /// Reads everything now, timing rates by the machine's clock, so they hold
+    /// however late a frame was or however a test drives the UI's clock.
+    pub fn collectNow(s: *Sampler) void {
+        s.collect(platform.clock.now());
     }
 
     /// Reads everything. `now` is a clock in seconds; rates are over the

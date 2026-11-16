@@ -12,7 +12,19 @@ pub const env = switch (builtin.os.tag) {
     else => @import("dummy/env.zig"),
 };
 
+pub const clock = switch (builtin.os.tag) {
+    .linux => @import("linux/clock.zig"),
+    else => @import("dummy/clock.zig"),
+};
+
 test "the file readers compile on every OS" {
     std.testing.refAllDecls(files);
     std.testing.refAllDecls(env);
+    std.testing.refAllDecls(clock);
+}
+
+test "the clock moves forward" {
+    const a = clock.now();
+    const b = clock.now();
+    try std.testing.expect(b >= a);
 }

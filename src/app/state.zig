@@ -195,10 +195,13 @@ pub const State = struct {
     /// Samples when it is time; returns the seconds until the next.
     pub fn tick(s: *State, now: f64) f32 {
         if (s.sampler.samples == 0 or now >= s.next_sample) {
-            s.sampler.collect(now);
+            s.sampler.collectNow(); // `now` only schedules: rates use the machine's clock
             s.rebuild();
             // Rates need two samples: the second comes quickly so the first screen isn't all zeros.
-            s.next_sample = now + (if (s.sampler.samples <= 1) @as(f64, 0.3) else 1.0);
+            // Keep to the second, not a second after each late frame, so a minute
+            // of samples is a minute; after a stall, start again from now.
+            const period: f64 = if (s.sampler.samples <= 1) 0.3 else 1.0;
+            s.next_sample = if (s.next_sample > 0 and now - s.next_sample < period) s.next_sample + period else now + period;
         }
         return @floatCast(@max(0.05, s.next_sample - now));
     }
