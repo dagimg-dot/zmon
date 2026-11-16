@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=zmon
+GenericName=System Monitor
+Comment=Every process grouped by app, with live CPU, memory, disk and network
+Exec=zmon
+Icon=zmon
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=zmon

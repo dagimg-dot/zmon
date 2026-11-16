@@ -8,7 +8,7 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 - **Zig 0.17.0 only.** The global `zig` may point at another version, so check `zig version` and use `~/.zvm/0.17.0/zig` when they differ. Other projects here still use 0.16.
 - **nanoui** (github.com/justrach/nanoui) draws everything: flexbox layout, immediate-mode views, a CPU or OpenGL renderer inside GTK. It is pinned by release in `build.zig.zon`. While nanoui is 0.x a minor release may change its API, so bump it on purpose and rerun the tests.
-- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the bundled assets are the Lexend font and the theme files. Ask before adding anything else, SQLite for history included.
+- **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the bundled assets are the Lexend font, the theme files and the app icon. Ask before adding anything else, SQLite for history included.
 - **`nui`** is nanoui's tool for checking an app without opening a window. It is built from a nanoui checkout with `zig build nui`. On this machine: `~/JDrive/Projects/rando/nanoui-src/nanoui/zig-out/bin/nui`.
 
 ## Layout
@@ -22,10 +22,11 @@ system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui
   sampler/    rates and history             linux/{process,cpu,memory,disk,network,load,units}.zig  dummy/
   apps/       launcher index, icons, grouping   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
   config/     the settings file and the user's theme folder (XDG)   linux/  dummy/
+  desktop/    the program's name for the shell, which matches it to zmon.desktop   linux/  dummy/
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
   app/        state.zig (selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
-  ui/         theme.zig (palette to colours) controls.zig (switch, segmented) fonts.zig charts.zig tile.zig  assets/fonts/
+  ui/         theme.zig (palette to colours) controls.zig (switch, segmented) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen
 ```

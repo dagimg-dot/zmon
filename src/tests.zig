@@ -10,6 +10,7 @@ test {
     _ = @import("ui/charts.zig");
     _ = @import("ui/theme.zig");
     _ = @import("ui/fonts.zig");
+    _ = @import("ui/icon.zig");
 }
 
 fn tester(t: *ui.Tester, state: *app_state.State) !void {

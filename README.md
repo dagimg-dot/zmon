@@ -20,6 +20,12 @@ zig build run
 zig build test
 ```
 
+To put zmon in your launcher with its icon, install it under your home:
+
+```bash
+zig build install -Doptimize=ReleaseFast --prefix ~/.local
+```
+
 `AGENTS.md` has the project's rules, including how to check the look without opening a window.
 
 ## Credits

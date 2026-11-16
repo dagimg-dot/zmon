@@ -34,6 +34,16 @@ pub fn build(b: *std.Build) void {
     // A window of its own on Windows, without a console window beside it.
     if (target.result.os.tag == .windows) exe.subsystem = .windows;
     b.installArtifact(exe);
+    // The desktop entry and the icon, where launchers and the Wayland shell
+    // look: `zig build install --prefix ~/.local` makes zmon a desktop app.
+    if (target.result.os.tag == .linux) {
+        b.installFile("src/ui/assets/app/zmon.desktop", "share/applications/zmon.desktop");
+        b.installFile("src/ui/assets/app/zmon.svg", "share/icons/hicolor/scalable/apps/zmon.svg");
+        for ([_][]const u8{ "16", "24", "32", "48", "256" }) |px| b.installFile(
+            b.fmt("src/ui/assets/app/zmon-{s}.png", .{px}),
+            b.fmt("share/icons/hicolor/{s}x{s}/apps/zmon.png", .{ px, px }),
+        );
+    }
     const run = b.addRunArtifact(exe);
     run.addPassthruArgs();
     b.step("run", "Run zmon (opens its window)").dependOn(&run.step);
