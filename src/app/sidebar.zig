@@ -7,6 +7,7 @@ const fmt = core.fmt;
 const state = @import("state.zig");
 const theme = @import("../ui/theme.zig");
 const tile = @import("../ui/tile.zig");
+const controls = @import("../ui/controls.zig");
 
 const State = state.State;
 const Page = state.Page;
@@ -37,10 +38,7 @@ fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8
     const row = ui.div(c).row().wFull().h(34).px(10).itemsCenter().gap(10).rounded(8).control();
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
-    if (row.clicked()) {
-        if (page == .settings and s.page != .settings) s.reload_themes = true;
-        s.page = page;
-    }
+    if (controls.press(c, row, .{ .role = .tab, .label = label, .selected = on })) s.open(page);
     const ink = if (on) k.selected_text else k.text;
     ui.icon(c, icon, .{ .size = 14, .frame = 18, .color = ink });
     ui.text(c, label, .{ .size = 13.5, .weight = if (on) .semibold else .regular, .color = ink });
@@ -106,6 +104,6 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
     };
     for (tiles) |it| {
-        if (tile.draw(c, k, it.t, s.page == it.page)) s.page = it.page;
+        if (tile.draw(c, k, it.t, s.page == it.page)) s.open(it.page);
     }
 }

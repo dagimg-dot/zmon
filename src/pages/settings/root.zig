@@ -3,7 +3,6 @@
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
-const kit = nanoui.kit;
 const core = @import("zmon-core");
 const system = @import("zmon-system");
 const app = @import("../../app/state.zig");
@@ -23,12 +22,13 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     appearance(c, s, k);
     graphs(c, s, k);
     processes(c, s, k);
+    accessibility(c, s, k);
     yourThemes(c, s, k);
     about(c, s, k);
     {
         const r = ui.div(c).row().wFull().pt(20);
         defer r.end();
-        if (kit.button(c, "Reset to defaults", .{ .variant = .outline, .size = .sm }).clicked) s.resetSettings();
+        if (controls.button(c, k, "Reset to defaults", .{})) s.resetSettings();
     }
 }
 
@@ -98,6 +98,28 @@ fn processes(c: *ui.Context, s: *State, k: theme.Colors) void {
     if (row.switchRow(c, k, "confirm", "Ask before ending a task", "End task asks first, so an app with unsaved work isn't closed by a stray click.", false, &s.settings.confirm_end_task)) s.save();
 }
 
+fn accessibility(c: *ui.Context, s: *State, k: theme.Colors) void {
+    row.heading(c, k, "Accessibility");
+    const g = row.group(c, k, "accessibility");
+    defer g.end();
+    {
+        const r = row.begin(c, k, "text-size", "Text size", "Makes every word in zmon larger.", true);
+        defer r.end();
+        var i: usize = @backingInt(s.settings.text_size);
+        if (controls.segmented(c, k, "text-size-choice", &.{ "Default", "Large", "Larger" }, &i)) {
+            s.settings.text_size = @fromBackingInt(@intCast(i));
+            s.save();
+        }
+    }
+    if (row.switchRow(c, k, "contrast", "More contrast", "Quieter text and lines are drawn stronger, in every theme.", false, &s.settings.more_contrast)) s.save();
+    if (row.switchRow(c, k, "motion", "Reduce motion", "Buttons, dialogs and messages appear without moving.", false, &s.settings.reduce_motion)) s.save();
+    {
+        const r = row.begin(c, k, "keys", "Keyboard shortcuts", "Every page, list and action has one. Ctrl+? shows them anywhere.", false);
+        defer r.end();
+        if (controls.button(c, k, "Show", .{})) s.shortcuts_open = true;
+    }
+}
+
 fn yourThemes(c: *ui.Context, s: *State, k: theme.Colors) void {
     row.heading(c, k, "Your themes");
     const g = row.group(c, k, "your-themes");
@@ -111,7 +133,7 @@ fn yourThemes(c: *ui.Context, s: *State, k: theme.Colors) void {
         const r = row.begin(c, k, "add", "Add your own themes", help, true);
         defer r.end();
         if (s.config) |at| {
-            if (kit.button(c, "Open folder", .{ .variant = .outline, .size = .sm, .icon = "folder" }).clicked) {
+            if (controls.button(c, k, "Open folder", .{ .icon = "folder" })) {
                 if (!system.config.makeThemesFolder(s.io, at) or !nanoui.shell.openPath(at.themes))
                     s.toaster.push(.{ .title = "Couldn't open the theme folder", .message = "" });
             }

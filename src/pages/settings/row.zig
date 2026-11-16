@@ -24,7 +24,7 @@ pub fn switchRow(c: *ui.Context, k: theme.Colors, key: []const u8, label: []cons
     const r = begin(c, k, key, label, help, first);
     defer r.end();
     _ = r.control().hover(k.hover);
-    const flipped = r.clicked();
+    const flipped = controls.press(c, r, .{ .role = .switch_toggle, .label = label, .value = if (value.*) "On" else "Off", .selected = value.* });
     if (flipped) value.* = !value.*;
     controls.switchLook(c, k, value.*);
     return flipped;

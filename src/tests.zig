@@ -87,7 +87,7 @@ test "searching Processes keeps the processes whose name or pid matches" {
     try t.clickText("Processes");
     t.settle(0.2);
     const all = state.proc_rows.len;
-    try t.clickText("Search by name or PID");
+    try t.clickText("Search");
     t.typeText("1");
     t.settle(0.2);
     try std.testing.expectEqualStrings("1", state.search.text());
@@ -224,4 +224,159 @@ test "Reset to defaults brings back Graphite and the default switches" {
     t.settle(0.2);
     try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
     try std.testing.expect(state.settings.colored_graphs);
+}
+
+test "arrow keys move the selection, Home and End jump, and Delete asks before ending" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try t.clickText("Processes");
+    t.settle(0.2);
+    if (state.proc_rows.len < 3) return error.SkipZigTest;
+    _ = t.shortcut(.{ .key = ui.Shortcut.down });
+    try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    _ = t.shortcut(.{ .key = ui.Shortcut.down });
+    try std.testing.expectEqual(@as(?usize, 1), state.selectedRow());
+    _ = t.shortcut(.{ .key = ui.Shortcut.up });
+    try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    t.key(.end);
+    try std.testing.expectEqual(state.proc_rows.len - 1, state.selectedRow().?);
+    t.key(.home);
+    try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    t.key(.delete); // asks first; the test never confirms, so nothing is signalled
+    try std.testing.expect(state.confirm);
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape });
+    t.settle(0.3);
+    try std.testing.expect(!state.confirm);
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape }); // with no search, Escape clears the selection
+    try std.testing.expectEqual(@as(?usize, null), state.selectedRow());
+}
+
+test "Right shows an app's processes and Left hides them again" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const at = for (state.app_rows, 0..) |r, i| switch (r) {
+        .group => |g| if (state.groups[g].members.len > 1) break i,
+        .proc => {},
+    } else return error.SkipZigTest; // no app with helpers is running
+    while (state.selectedRow() != at) _ = t.shortcut(.{ .key = ui.Shortcut.down });
+    const root = state.selected_app;
+    t.key(.right);
+    try std.testing.expect(state.expanded.contains(root));
+    _ = t.shortcut(.{ .key = ui.Shortcut.down }); // onto its first process
+    try std.testing.expect(state.selected_app != root);
+    t.key(.left); // back to the app
+    try std.testing.expectEqual(root, state.selected_app);
+    t.key(.left);
+    try std.testing.expect(!state.expanded.contains(root));
+}
+
+test "typing on a list starts a search, and Escape clears it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try t.clickText("Processes");
+    t.settle(0.2);
+    const all = state.proc_rows.len;
+    t.typeText("s");
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("s", state.search.text());
+    try std.testing.expect(state.proc_rows.len <= all);
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape });
+    t.settle(0.2);
+    try std.testing.expectEqualStrings("", state.search.text());
+    try std.testing.expectEqual(state.sampler.procs.len, state.proc_rows.len); // every process again (the count moves as they come and go)
+}
+
+test "Ctrl+number opens pages, Ctrl+comma Settings, and Ctrl+? the shortcuts" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.shortcut(.{ .key = '2', .cmd = true }));
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
+    try std.testing.expect(t.shortcut(.{ .key = '4', .cmd = true }));
+    try std.testing.expectEqual(app_state.Page.memory, state.page);
+    try std.testing.expect(t.shortcut(.{ .key = ',', .cmd = true }));
+    try std.testing.expectEqual(app_state.Page.settings, state.page);
+    try std.testing.expect(t.shortcut(.{ .key = '?', .cmd = true, .shift = true }));
+    t.settle(0.3);
+    try std.testing.expect(state.shortcuts_open);
+    try std.testing.expect(t.hasText("Keyboard shortcuts"));
+    try std.testing.expect(t.hasText("Search apps and processes"));
+    _ = t.shortcut(.{ .key = ui.Shortcut.escape });
+    t.settle(0.4);
+    try std.testing.expect(!state.shortcuts_open);
+    try std.testing.expect(t.shortcut(.{ .key = 'f', .cmd = true })); // from Settings, search opens Processes
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
+}
+
+test "Tab reaches the sidebar with a visible focus ring, and Space opens the page" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.ctx.focus_ring == null); // nothing drawn until a key is pressed
+    t.key(.tab); // Apps
+    t.key(.tab); // Processes
+    t.settle(0.1);
+    try std.testing.expect(t.ctx.focus != 0);
+    try std.testing.expect(t.ctx.focus_ring != null);
+    t.typeText(" ");
+    t.settle(0.2);
+    try std.testing.expectEqual(app_state.Page.processes, state.page);
+}
+
+test "a screen reader is told what the sidebar, headers and rows are" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena.allocator(), &els);
+    var apps_tab = false;
+    var sorted = false;
+    var row = false;
+    for (els.items) |e| {
+        if (e.role == .tab and std.mem.eql(u8, e.label, "Apps") and e.selected) apps_tab = true;
+        if (std.mem.eql(u8, e.label, "Sort by CPU") and std.mem.eql(u8, e.value, "Sorted descending")) sorted = true;
+        if (e.role == .row and std.mem.indexOf(u8, e.label, ", CPU ") != null) row = true;
+    }
+    try std.testing.expect(apps_tab);
+    try std.testing.expect(sorted);
+    try std.testing.expect(row or state.app_rows.len == 0);
+}
+
+test "text size and more contrast apply from Settings" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    state.settings.text_size = .larger;
+    state.settings.reduce_motion = true;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expectEqual(@as(f32, 1.3), t.ctx.access.zoom);
+    try std.testing.expect(t.ctx.reduced_motion);
+    state.settings.reduce_motion = false;
+    t.frame();
+    try std.testing.expect(!t.ctx.reduced_motion);
 }

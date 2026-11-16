@@ -4,6 +4,7 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const fmt = @import("zmon-core").fmt;
 const theme = @import("theme.zig");
+const controls = @import("controls.zig");
 
 pub const row_h = 30;
 pub const header_h = 30;
@@ -29,8 +30,12 @@ pub fn header(c: *ui.Context, k: theme.Colors, columns: []const Column, sorted: 
             var d = cell(c, col, header_h).gap(4);
             if (col.sorts) d = d.control().hover(k.hover);
             defer d.end();
-            if (col.sorts and d.clicked()) clicked = i;
             const on = col.sorts and sorted == i;
+            if (col.sorts and controls.press(c, d, .{
+                .label = c.print("Sort by {s}", .{col.title}),
+                .value = if (!on) "" else if (ascending) "Sorted ascending" else "Sorted descending",
+                .selected = on,
+            })) clicked = i;
             ui.text(c, col.title, .{ .size = 11.5, .weight = if (on) .semibold else .regular, .color = if (on) k.text else k.secondary });
             if (on) ui.icon(c, if (ascending) "chevron.up" else "chevron.down", .{ .size = 8, .frame = 12, .weight = .bold, .color = k.secondary });
         }
@@ -73,6 +78,22 @@ pub fn metrics(c: *ui.Context, columns: []const Column, i: Ink, m: Metrics) void
     value(c, columns[3], c.print("{d}", .{m.threads}), i.faint, false);
 }
 
+/// Tells a screen reader what a row is: its name and each value with its column.
+pub fn describeRow(c: *ui.Context, r: ui.Div, name: []const u8, m: Metrics, selected: bool) void {
+    var b: [3][32]u8 = undefined;
+    ui.access.describe(c, r.index, .{
+        .role = .row,
+        .label = c.print("{s}, CPU {s}, memory {s}, disk {s}, {d} threads", .{
+            name,
+            fmt.percent(&b[0], m.cpu),
+            fmt.bytes(&b[1], m.memory),
+            if (m.disk_known) fmt.rate(&b[2], m.disk) else "unknown",
+            m.threads,
+        }),
+        .selected = selected,
+    });
+}
+
 /// A row: selected, striped or plain. Returns it to draw cells into; end it after.
 pub fn row(c: *ui.Context, k: theme.Colors, i: usize, selected: bool) ui.Div {
     const r = ui.div(c).row().wFull().h(row_h).px(pad).itemsCenter();
@@ -88,6 +109,20 @@ pub fn ink(k: theme.Colors, selected: bool) Ink {
         .{ .text = k.selected_text, .faint = k.selected_text.alpha(0.7) }
     else
         .{ .text = k.text, .faint = k.secondary };
+}
+
+/// Opens a virtualized list of `count` rows, scrolled so that row `reveal`
+/// (the keyboard's new selection) is in view.
+pub fn list(c: *ui.Context, count: usize, reveal: ?usize) ui.ListRows {
+    var to: ?f32 = null;
+    if (reveal) |i| {
+        const id = c.peekId(null);
+        const at = (c.scroll.get(id) orelse 0);
+        const view_h = if (c.rects.get(id)) |r| r.h else c.size.h;
+        const top = @as(f32, @floatFromInt(i)) * row_h;
+        if (top < at) to = top else if (top + row_h > at + view_h) to = top + row_h - view_h;
+    }
+    return ui.list(c, .{ .count = count, .row_height = row_h, .scroll_to = to });
 }
 
 /// A line in the middle of an empty list.

@@ -50,8 +50,18 @@ pub const State = struct {
     selected_app: i32 = 0,
     /// The pid selected in Processes (0: none).
     selected_proc: i32 = 0,
-    /// What Processes is filtered by: part of a name, or a pid.
+    /// What Apps and Processes are filtered by: part of a name, or a pid.
     search: ui.TextBuffer = .{},
+    /// The row the keyboard moved the selection to, scrolled into view by the next list drawn.
+    reveal: ?usize = null,
+    /// The keyboard shortcuts overlay is open.
+    shortcuts_open: bool = false,
+    /// The last input was a key, so focus is drawn (a click hides it again).
+    keyboard: bool = false,
+    /// The focused box when the last frame ended.
+    last_focus: u64 = 0,
+    /// Settings turned reduced motion on, over whatever the system said.
+    motion_forced: bool = false,
     expanded: std.AutoHashMapUnmanaged(i32, void) = .empty,
     /// A group opened or closed while the list was being drawn: the rows are
     /// rebuilt only after the list is done with them.
@@ -267,10 +277,18 @@ pub const State = struct {
         }
     };
 
+    /// Whether an app matches the search: its name, or any of its processes.
+    fn appMatches(s: *const State, g: apps.Group) bool {
+        const query = std.mem.trim(u8, s.search.text(), " ");
+        if (query.len == 0 or core.search.containsIgnoreCase(g.name, query)) return true;
+        for (g.members) |m| if (core.search.matches(s.sampler.procs[m], query)) return true;
+        return false;
+    }
+
     fn appRows(s: *State, a: std.mem.Allocator) ![]Row {
         var rows: std.ArrayList(Row) = .empty;
         for (s.groups, 0..) |g, gi| {
-            if (g.kind != .app) continue;
+            if (g.kind != .app or !s.appMatches(g)) continue;
             try rows.append(a, .{ .group = @intCast(gi) });
             if (g.members.len > 1 and s.expanded.contains(g.root)) {
                 const kids = try a.dupe(u32, g.members[1..]);
@@ -312,6 +330,110 @@ pub const State = struct {
     pub fn toggle(s: *State, root: i32) void {
         if (s.expanded.remove(root)) {} else s.expanded.put(s.gpa, root, {}) catch {};
         s.rebuild();
+    }
+
+    /// Opens a page. Settings reads the theme folder again as it opens.
+    pub fn open(s: *State, page: Page) void {
+        if (page == .settings and s.page != .settings) s.reload_themes = true;
+        s.page = page;
+    }
+
+    /// Whether the page shown is one of the two lists.
+    pub fn onList(s: *const State) bool {
+        return s.page == .apps or s.page == .processes;
+    }
+
+    /// The row of the selection in the list shown, if it is in the list.
+    pub fn selectedRow(s: *const State) ?usize {
+        switch (s.page) {
+            .apps => for (s.app_rows, 0..) |r, i| {
+                const pid = switch (r) {
+                    .group => |g| s.groups[g].root,
+                    .proc => |p| s.sampler.procs[p].pid,
+                };
+                if (pid == s.selected_app) return i;
+            },
+            .processes => for (s.proc_rows, 0..) |p, i| {
+                if (s.sampler.procs[p].pid == s.selected_proc) return i;
+            },
+            else => {},
+        }
+        return null;
+    }
+
+    fn rowCount(s: *const State) usize {
+        return switch (s.page) {
+            .apps => s.app_rows.len,
+            .processes => s.proc_rows.len,
+            else => 0,
+        };
+    }
+
+    fn selectRow(s: *State, i: usize) void {
+        switch (s.page) {
+            .apps => s.selected_app = switch (s.app_rows[i]) {
+                .group => |g| s.groups[g].root,
+                .proc => |p| s.sampler.procs[p].pid,
+            },
+            .processes => s.selected_proc = s.sampler.procs[s.proc_rows[i]].pid,
+            else => return,
+        }
+        s.reveal = i;
+    }
+
+    /// Moves the selection `by` rows, stopping at the ends. With nothing
+    /// selected, down starts at the top and up at the bottom.
+    pub fn moveSelection(s: *State, by: isize) void {
+        const n = s.rowCount();
+        if (n == 0) return;
+        const last: isize = @intCast(n - 1);
+        const at: isize = if (s.selectedRow()) |i| @as(isize, @intCast(i)) + by else if (by > 0) 0 else last;
+        s.selectRow(@intCast(std.math.clamp(at, 0, last)));
+    }
+
+    /// Selects the first or the last row.
+    pub fn selectEnd(s: *State, last: bool) void {
+        const n = s.rowCount();
+        if (n > 0) s.selectRow(if (last) n - 1 else 0);
+    }
+
+    /// Opens or closes the selected app in Apps. Closing from one of its
+    /// processes selects the app instead, as a tree view does.
+    pub fn openSelected(s: *State, want_open: bool) void {
+        if (s.page != .apps) return;
+        const i = s.selectedRow() orelse return;
+        switch (s.app_rows[i]) {
+            .group => |gi| {
+                const g = s.groups[gi];
+                if (g.members.len > 1 and s.expanded.contains(g.root) != want_open) s.toggle(g.root);
+            },
+            .proc => |p| if (!want_open) {
+                if (s.ownerOf(p)) |g| {
+                    s.selected_app = g.root;
+                    s.reveal = s.selectedRow();
+                }
+            },
+        }
+    }
+
+    /// Opens the selected app if it is closed and closes it if it is open.
+    pub fn toggleSelected(s: *State) void {
+        if (s.page != .apps) return;
+        const i = s.selectedRow() orelse return;
+        switch (s.app_rows[i]) {
+            .group => |gi| if (s.groups[gi].members.len > 1) s.toggle(s.groups[gi].root),
+            .proc => {},
+        }
+    }
+
+    pub fn clearSelection(s: *State) void {
+        if (s.page == .processes) s.selected_proc = 0 else s.selected_app = 0;
+    }
+
+    /// Asks before ending the selection when Settings says to, else ends it.
+    pub fn askEndTask(s: *State) void {
+        if (s.target() == null) return;
+        if (s.settings.confirm_end_task) s.confirm = true else s.endTask(false);
     }
 
     /// The pid selected on the page shown.

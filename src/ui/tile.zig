@@ -5,6 +5,7 @@ const ui = nanoui.ui;
 const core = @import("zmon-core");
 const charts = @import("charts.zig");
 const theme = @import("theme.zig");
+const controls = @import("controls.zig");
 
 pub const Tile = struct {
     key: []const u8,
@@ -29,7 +30,7 @@ pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) bool {
     const box = ui.div(c).column().wFull().px(10).py(8).gap(3).rounded(10).control();
     defer box.end();
     if (on) _ = box.bg(k.page).border(k.separator) else _ = box.hover(k.hover);
-    const clicked = box.clicked();
+    const clicked = controls.press(c, box, .{ .role = .tab, .label = c.print("{s}, {s}, {s}", .{ t.title, t.value, t.detail }), .selected = on });
     {
         const head = ui.div(c).row().wFull().itemsCenter().gap(8);
         defer head.end();

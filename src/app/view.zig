@@ -7,6 +7,8 @@ const theme = @import("../ui/theme.zig");
 const apps_page = @import("../pages/apps/root.zig");
 const processes = @import("../pages/processes/root.zig");
 const confirm = @import("confirm.zig");
+const keys = @import("keys.zig");
+const shortcuts = @import("shortcuts.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
 const settings_page = @import("../pages/settings/root.zig");
@@ -19,13 +21,18 @@ pub fn view(s: *State, c: *ui.Context) void {
         s.reloadThemes();
     }
     const dark = s.isDark(nanoui.isDark());
-    const k = theme.colors(s.theme(dark), s.settings.colored_graphs);
+    const k = theme.colors(s.theme(dark), .{ .colored_graphs = s.settings.colored_graphs, .more_contrast = s.settings.more_contrast });
     // nanoui draws widgets from c.theme; the window's font comes from the
     // window's own theme (main.zig), and c.theme_chosen keeps them in step.
     const chosen = theme.uiTheme(k);
     c.theme = chosen;
     c.theme_chosen = chosen;
     c.frameIn(s.tick(c.time));
+    c.setZoom(s.settings.text_size.scale());
+    reduceMotion(c, s);
+    keys.handle(c, s);
+    // Focus is drawn only after a key, as browsers' :focus-visible.
+    c.focus_ring = if (s.keyboard) .{ .color = k.accent, .width = 2 } else null;
 
     const root = ui.div(c).row().sizeFull().bg(k.page);
     defer root.end();
@@ -42,5 +49,21 @@ pub fn view(s: *State, c: *ui.Context) void {
         }
     }
     confirm.confirmDialog(c, s);
+    shortcuts.overlay(c, s, k);
+    s.last_focus = c.focus;
     s.toaster.view(c);
+}
+
+/// Settings' Reduce motion, on top of the system's: turning it off gives the
+/// system's own choice back.
+fn reduceMotion(c: *ui.Context, s: *State) void {
+    if (s.settings.reduce_motion) {
+        c.reduced_motion = true;
+        c.reduce_motion = true;
+        s.motion_forced = true;
+    } else if (s.motion_forced) {
+        c.reduced_motion = false;
+        c.reduce_motion = false;
+        s.motion_forced = false;
+    }
 }

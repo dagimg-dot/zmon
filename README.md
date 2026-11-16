@@ -12,6 +12,35 @@ A system monitor for Linux, written in Zig and drawn natively by [nanoui](https:
 
 History, startup items, a disk analyzer and a floating overlay are planned.
 
+## Keyboard
+
+Every page, list and action has a key. Ctrl+? (or F1) shows them all in zmon.
+
+| Keys | Does |
+|---|---|
+| Ctrl+F | Search apps and processes |
+| Ctrl+, | Settings |
+| Ctrl+? or F1 | Keyboard shortcuts |
+| Ctrl+Q | Quit |
+| Ctrl+1, Ctrl+2 | Apps, Processes |
+| Ctrl+3 to Ctrl+6 | CPU, Memory, Disk, Network |
+| Ctrl+Page Down, Ctrl+Page Up | Next or previous page |
+| Up, Down | Select the row above or below |
+| Home, End | First or last row |
+| Right, Left | Show an app's processes; hide them, or go back to the app |
+| Delete | End task (Return confirms) |
+| Esc | Clear the search, then the selection |
+| Any letter | Start a search |
+| Tab, Shift+Tab | Move between controls |
+| Space or Return | Press the focused control |
+
+## Accessibility
+
+- Every control can be reached with Tab and pressed with Space or Return, and the focus is outlined in the theme's accent once you use the keyboard.
+- Settings has Text size (Default, Large, Larger), More contrast, which strengthens quiet text and lines in any theme, and Reduce motion.
+- Every built-in theme is tested for readable contrast.
+- Controls and list rows carry names, roles and states for screen readers. nanoui doesn't yet pass them to Linux's accessibility bus (AT-SPI), so Orca can't read zmon until it does.
+
 ## Build and run
 
 You need Zig 0.17.0 and GTK 3 or 4 at run time.

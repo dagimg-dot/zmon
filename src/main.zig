@@ -26,7 +26,7 @@ pub fn main(init: nanoui.Init) !void {
         .icon = icon.png,
         .width = 1180,
         .height = 760,
-        .theme = theme.uiTheme(theme.colors(state.theme(state.isDark(nanoui.isDark())), true)),
+        .theme = theme.uiTheme(theme.colors(state.theme(state.isDark(nanoui.isDark())), .{})),
         .content = .{ .view = .init(&state, app_view.view) },
     });
     try app.run();

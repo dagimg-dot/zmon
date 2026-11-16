@@ -7,6 +7,7 @@ const ui = nanoui.ui;
 const core = @import("zmon-core");
 const app = @import("../../app/state.zig");
 const theme = @import("../../ui/theme.zig");
+const controls = @import("../../ui/controls.zig");
 
 const State = app.State;
 const Theme = core.themes.Theme;
@@ -57,7 +58,7 @@ fn card(c: *ui.Context, s: *State, k: theme.Colors, t: *const Theme, chosen: boo
     const box = ui.div(c).column().grow().w(0).p(6).gap(7).rounded(13).control();
     defer box.end();
     if (chosen) _ = box.border(k.accent).borderW(2) else _ = box.border(k.separator).hover(k.hover);
-    if (box.clicked() and !chosen) {
+    if (controls.press(c, box, .{ .role = .radio_button, .label = t.name, .selected = chosen }) and !chosen) {
         s.chooseTheme(dark, t.id);
         c.changed = true;
     }

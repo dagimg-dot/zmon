@@ -16,6 +16,21 @@ pub const Span = enum(u16) {
     }
 };
 
+/// How large text is drawn, over the default.
+pub const TextSize = enum {
+    default,
+    large,
+    larger,
+
+    pub fn scale(t: TextSize) f32 {
+        return switch (t) {
+            .default => 1,
+            .large => 1.15,
+            .larger => 1.3,
+        };
+    }
+};
+
 /// A theme's id (its file name without .toml), kept inline so settings own no memory.
 pub const ThemeId = struct {
     buf: [64]u8 = undefined,
@@ -46,6 +61,11 @@ pub const Settings = struct {
     span: Span = .minute,
     show_kernel_threads: bool = true,
     confirm_end_task: bool = true,
+    text_size: TextSize = .default,
+    /// Stronger secondary text and lines than the theme draws.
+    more_contrast: bool = false,
+    /// Changes happen at once instead of easing.
+    reduce_motion: bool = false,
 
     /// Settings from a file's text. Anything missing or unreadable keeps its default.
     pub fn parse(scratch: std.mem.Allocator, text: []const u8) Settings {
@@ -59,6 +79,9 @@ pub const Settings = struct {
         if (number(entries, "graphs.history")) |n| s.span = std.enums.fromInt(Span, n) orelse s.span;
         s.show_kernel_threads = boolean(entries, "processes.kernel_threads") orelse s.show_kernel_threads;
         s.confirm_end_task = boolean(entries, "processes.confirm_end_task") orelse s.confirm_end_task;
+        if (toml.getString(entries, "accessibility.text_size")) |v| s.text_size = std.meta.stringToEnum(TextSize, v) orelse s.text_size;
+        s.more_contrast = boolean(entries, "accessibility.more_contrast") orelse s.more_contrast;
+        s.reduce_motion = boolean(entries, "accessibility.reduce_motion") orelse s.reduce_motion;
         return s;
     }
 
@@ -80,6 +103,11 @@ pub const Settings = struct {
             \\kernel_threads = {}
             \\confirm_end_task = {}
             \\
+            \\[accessibility]
+            \\text_size = "{t}"
+            \\more_contrast = {}
+            \\reduce_motion = {}
+            \\
         , .{
             s.appearance,
             s.dark_theme.slice(),
@@ -88,6 +116,9 @@ pub const Settings = struct {
             s.span.seconds(),
             s.show_kernel_threads,
             s.confirm_end_task,
+            s.text_size,
+            s.more_contrast,
+            s.reduce_motion,
         });
     }
 };
@@ -126,6 +157,9 @@ test "settings round-trip through their file" {
         .span = .five_minutes,
         .show_kernel_threads = false,
         .confirm_end_task = false,
+        .text_size = .larger,
+        .more_contrast = true,
+        .reduce_motion = true,
     };
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -137,6 +171,8 @@ test "settings round-trip through their file" {
     try std.testing.expect(!back.colored_graphs);
     try std.testing.expectEqual(Span.five_minutes, back.span);
     try std.testing.expect(!back.show_kernel_threads and !back.confirm_end_task);
+    try std.testing.expectEqual(TextSize.larger, back.text_size);
+    try std.testing.expect(back.more_contrast and back.reduce_motion);
     s = back;
 }
 

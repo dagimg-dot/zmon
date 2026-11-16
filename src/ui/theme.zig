@@ -46,7 +46,26 @@ pub fn color(c: Rgba) Color {
     };
 }
 
-pub fn colors(t: *const Theme, colored_graphs: bool) Colors {
+pub const Options = struct {
+    /// Each device's graph in its own accent; off, all in the text colour.
+    colored_graphs: bool = true,
+    /// Secondary text and lines pulled toward the text colour, for people who
+    /// find the theme's quieter colours hard to read.
+    more_contrast: bool = false,
+};
+
+pub fn colors(t: *const Theme, opts: Options) Colors {
+    var k = plain(t, opts.colored_graphs);
+    if (opts.more_contrast) {
+        k.secondary = k.secondary.mix(k.text, 0.5);
+        k.tertiary = k.tertiary.mix(k.text, 0.5);
+        k.separator = k.separator.mix(k.text, 0.35);
+        k.border = k.border.mix(k.text, 0.35);
+    }
+    return k;
+}
+
+fn plain(t: *const Theme, colored_graphs: bool) Colors {
     const text = color(t.color(.foreground));
     return .{
         .dark = t.dark,
@@ -97,13 +116,30 @@ pub fn uiTheme(k: Colors) ui.Theme {
     return t;
 }
 
+test "more contrast moves secondary text toward the text colour" {
+    var lib = core.themes.Library.init(std.testing.allocator);
+    defer lib.deinit();
+    core.themes.builtin.addAll(&lib);
+    lib.resolveAll();
+    const t = lib.find("nord").?;
+    const soft = colors(t, .{});
+    const strong = colors(t, .{ .more_contrast = true });
+    const dist = struct {
+        fn of(a: Color, b: Color) f32 {
+            return @abs(a.r - b.r) + @abs(a.g - b.g) + @abs(a.b - b.b);
+        }
+    }.of;
+    try std.testing.expect(dist(strong.secondary, strong.text) < dist(soft.secondary, soft.text));
+    try std.testing.expectEqual(soft.text, strong.text);
+}
+
 test "every theme gives readable nanoui colours and keeps Lexend" {
     var lib = core.themes.Library.init(std.testing.allocator);
     defer lib.deinit();
     core.themes.builtin.addAll(&lib);
     lib.resolveAll();
     for (lib.themes.items) |*t| {
-        const k = colors(t, true);
+        const k = colors(t, .{});
         const u = uiTheme(k);
         try std.testing.expectEqualStrings(fonts.family, u.font.?);
         try std.testing.expectEqual(t.dark, u.dark);
