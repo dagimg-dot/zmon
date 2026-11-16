@@ -8,6 +8,7 @@ const state = @import("state.zig");
 const theme = @import("../ui/theme.zig");
 const tile = @import("../ui/tile.zig");
 const controls = @import("../ui/controls.zig");
+const app_icon = @import("../ui/icon.zig");
 
 const State = state.State;
 const Page = state.Page;
@@ -16,8 +17,11 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     const side = ui.div(c).column().w(236).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
     defer side.end();
     {
-        const head = ui.div(c).row().h(40).px(8).itemsCenter();
+        // The icon's corner sits as far from the top as from the left (20), in
+        // line with the page icons below it.
+        const head = ui.div(c).row().px(10).pt(10).pb(10).itemsCenter().gap(10);
         defer head.end();
+        app_icon.draw(c, 22);
         ui.text(c, "zmon", .{ .size = 17, .weight = .bold, .color = k.text });
     }
     nav(c, s, k, .apps, "Apps", "square.grid.2x2");

@@ -10,6 +10,7 @@ const theme = @import("../../ui/theme.zig");
 const controls = @import("../../ui/controls.zig");
 const row = @import("row.zig");
 const gallery = @import("gallery.zig");
+const icon = @import("../../ui/icon.zig");
 
 const State = app.State;
 
@@ -155,14 +156,24 @@ fn about(c: *ui.Context, s: *State, k: theme.Colors) void {
     row.heading(c, k, "About");
     const g = row.group(c, k, "about");
     defer g.end();
+    {
+        ui.key(c, "about-zmon");
+        const hero = ui.div(c).row().wFull().px(16).py(16).itemsCenter().gap(14);
+        defer hero.end();
+        icon.draw(c, 52);
+        const words = ui.div(c).column().gap(2);
+        defer words.end();
+        ui.text(c, "zmon", .{ .size = 17, .weight = .bold, .color = k.text });
+        ui.text(c, "A system monitor for Linux, in Zig", .{ .size = 12.5, .color = k.secondary });
+        ui.text(c, "Version 0.0.1", .{ .size = 12, .color = k.tertiary });
+    }
     const rows = [_]struct { key: []const u8, label: []const u8, value: []const u8 }{
-        .{ .key = "version", .label = "zmon", .value = "Version 0.0.1" },
         .{ .key = "machine", .label = "This machine", .value = if (s.sampler.machine().len > 0) s.sampler.machine() else "Unknown" },
         .{ .key = "typeface", .label = "Typeface", .value = "Lexend" },
         .{ .key = "themes", .label = "Themes", .value = c.print("{d}: Graphite by zmon, the rest ported from vicinae (GPL-3.0), palettes by their authors", .{s.themes.themes.items.len}) },
     };
-    for (rows, 0..) |it, i| {
-        const r = row.begin(c, k, it.key, it.label, "", i == 0);
+    for (rows) |it| {
+        const r = row.begin(c, k, it.key, it.label, "", false);
         defer r.end();
         const v = ui.div(c).row().maxW(420).justifyEnd();
         defer v.end();
