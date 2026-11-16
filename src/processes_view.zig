@@ -9,7 +9,7 @@ const app = @import("app.zig");
 const apps = @import("zmon-system").apps;
 const core = @import("zmon-core");
 const fmt = core.fmt;
-const theme = @import("theme.zig");
+const theme = @import("ui/theme.zig");
 
 const State = app.State;
 const row_h = 30;

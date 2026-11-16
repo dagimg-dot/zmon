@@ -6,9 +6,9 @@ const ui = nanoui.ui;
 const app_view = @import("app.zig");
 
 test {
-    _ = @import("charts.zig");
-    _ = @import("theme.zig");
-    _ = @import("fonts.zig");
+    _ = @import("ui/charts.zig");
+    _ = @import("ui/theme.zig");
+    _ = @import("ui/fonts.zig");
 }
 
 fn tester(t: *ui.Tester, state: *app_view.State) !void {

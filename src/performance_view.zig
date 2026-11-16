@@ -4,10 +4,10 @@ const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const app = @import("app.zig");
-const charts = @import("charts.zig");
+const charts = @import("ui/charts.zig");
 const core = @import("zmon-core");
 const fmt = core.fmt;
-const theme = @import("theme.zig");
+const theme = @import("ui/theme.zig");
 
 const State = app.State;
 

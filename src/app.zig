@@ -9,7 +9,7 @@ const kit = nanoui.kit;
 const core = @import("zmon-core");
 const system = @import("zmon-system");
 const apps = system.apps;
-const theme = @import("theme.zig");
+const theme = @import("ui/theme.zig");
 const processes = @import("processes_view.zig");
 const performance = @import("performance_view.zig");
 

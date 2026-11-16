@@ -2,8 +2,8 @@
 const std = @import("std");
 const nanoui = @import("nanoui");
 const app_view = @import("app.zig");
-const fonts = @import("fonts.zig");
-const theme = @import("theme.zig");
+const fonts = @import("ui/fonts.zig");
+const theme = @import("ui/theme.zig");
 
 pub const panic = nanoui.panic;
 pub const std_options = nanoui.std_options;
