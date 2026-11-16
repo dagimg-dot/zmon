@@ -15,6 +15,7 @@ const row_h = 30;
 const section_h = 34;
 const header_h = 30;
 const pad = 14;
+const icon_size = 20;
 
 const Column = struct { title: []const u8, sort: app.Sort, width: ?f32 = null, right: bool = true };
 const columns = [_]Column{
@@ -111,10 +112,33 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group, i: usize)
         } else {
             _ = c.leaf(.{ .width = .{ .px = 18 }, .height = .{ .px = 18 } }, .none, null);
         }
+        appIcon(c, s, k, g);
         ui.text(c, g.name, .{ .size = 13.5, .weight = if (g.kind == .app) .semibold else .regular, .color = ink });
         if (g.members.len > 1) ui.text(c, c.print("({d})", .{g.members.len}), .{ .size = 12, .color = faint });
     }
     values(c, ink, faint, g.cpu, g.memory, g.disk_bps, g.kind != .kernel, g.threads);
+}
+
+/// The group's launcher icon, or a plain tile when it has none or can't be drawn.
+fn appIcon(c: *ui.Context, s: *State, k: theme.Colors, g: apps.Group) void {
+    if (s.icons.get(g.icon)) |icon| {
+        const drawn = switch (icon.kind) {
+            .svg => ui.svg(c, .{ .key = icon.path, .bytes = icon.bytes, .size = icon_size }),
+            .png, .jpeg => ui.image(c, .{ .key = icon.path, .bytes = icon.bytes, .box = .{ .w = icon_size, .h = icon_size }, .radius = 4 }),
+        };
+        if (drawn) return;
+    }
+    const tile = ui.div(c).row().size(icon_size, icon_size).itemsCenter().justifyCenter().rounded(5).bg(k.separator);
+    defer tile.end();
+    switch (g.kind) {
+        .app => {
+            const len = if (g.name.len > 0) std.unicode.utf8ByteSequenceLength(g.name[0]) catch 1 else 0;
+            const first = c.print("{s}", .{g.name[0..@min(len, g.name.len)]});
+            ui.text(c, first, .{ .size = 11, .weight = .bold, .color = k.secondary });
+        },
+        .background => ui.icon(c, "gearshape", .{ .size = 11, .frame = icon_size, .color = k.secondary }),
+        .kernel => ui.icon(c, "cpu", .{ .size = 11, .frame = icon_size, .color = k.secondary }),
+    }
 }
 
 fn procRow(c: *ui.Context, s: *State, k: theme.Colors, p: @import("sampler.zig").Proc, i: usize) void {

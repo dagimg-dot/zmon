@@ -8,6 +8,7 @@ const ui = nanoui.ui;
 const kit = nanoui.kit;
 const sampler = @import("sampler.zig");
 const apps = @import("apps.zig");
+const icons = @import("icons.zig");
 const theme = @import("theme.zig");
 const processes = @import("processes_view.zig");
 const performance = @import("performance_view.zig");
@@ -27,6 +28,7 @@ pub const State = struct {
     gpa: std.mem.Allocator,
     sampler: sampler.Sampler,
     index: apps.Index,
+    icons: icons.Cache,
     /// Groups and rows of the current sample; replaced with every sample.
     built: std.heap.ArenaAllocator,
     groups: []apps.Group = &.{},
@@ -50,6 +52,7 @@ pub const State = struct {
             .gpa = gpa,
             .sampler = .init(gpa, io),
             .index = .init(gpa),
+            .icons = .init(gpa, io),
             .built = .init(gpa),
             .toaster = .{ .gpa = gpa },
         };
@@ -61,6 +64,7 @@ pub const State = struct {
         s.toaster.deinit();
         s.expanded.deinit(s.gpa);
         s.built.deinit();
+        s.icons.deinit();
         s.index.deinit();
         s.sampler.deinit();
     }
