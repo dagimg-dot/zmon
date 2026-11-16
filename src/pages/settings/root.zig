@@ -15,7 +15,7 @@ const icon = @import("../../ui/icon.zig");
 const State = app.State;
 
 pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const scroll = ui.div(c).column().wFull().grow().h(0).scrollY();
+    const scroll = ui.div(c).column().wFull().grow().h(0).itemsCenter().scrollY();
     defer scroll.end();
     const col = ui.div(c).column().wFull().maxW(900).px(28).pt(24).pb(32);
     defer col.end();
