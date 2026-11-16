@@ -24,6 +24,10 @@ pub fn read(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) Error![]u8
             .SUCCESS => {
                 if (rc == 0) break;
                 n += rc;
+                // A read that returns less than asked has reached the end: /proc,
+                // /sys and regular files hand over all they have at once. Stopping
+                // here saves the second read that would only return nothing.
+                if (rc < buf.len - (n - rc)) break;
             },
             .INTR => continue,
             .ACCES, .PERM => return error.AccessDenied,

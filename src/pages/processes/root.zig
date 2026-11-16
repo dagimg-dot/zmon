@@ -44,7 +44,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
     const bar = ui.div(c).row().wFull().h(56).px(table.pad + 4).itemsCenter().gap(12);
     defer bar.end();
     ui.text(c, "Processes", .{ .size = 18, .weight = .bold, .color = k.text });
-    ui.text(c, c.print("{d} running, {d} threads", .{ s.sampler.procs.len, s.sampler.threads }), .{ .size = 12.5, .color = k.secondary });
+    ui.text(c, c.print("{d} running, {d} threads", .{ s.sampler.process_count, s.sampler.threads }), .{ .size = 12.5, .color = k.secondary });
     ui.spacer(c);
     ui.key(c, "search");
     if (ui.textField(c, &s.search, .{ .placeholder = "Search", .width = .{ .px = 220 }, .size = 13 }).changed) s.rebuild();

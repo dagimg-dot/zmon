@@ -36,6 +36,13 @@ pub const History = struct {
 
 const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
 
+/// What the next sample reads. The process list costs most, so the app asks
+/// for it only while a list (or something watching a process) needs it.
+pub const Want = struct {
+    procs: bool = true,
+    kernel_threads: bool = true,
+};
+
 pub const Sampler = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -52,8 +59,18 @@ pub const Sampler = struct {
     disk_write_bps: f32 = 0,
     net_in_bps: f32 = 0,
     net_out_bps: f32 = 0,
+    /// Every thread and every process on the machine, counted each sample
+    /// whether or not the process list was read.
     threads: u32 = 0,
+    process_count: u32 = 0,
     samples: u64 = 0,
+    want: Want = .{},
+    /// This sample read the process list but has no earlier one to measure
+    /// against (the first sample, or the first after the list was closed):
+    /// its rates are zero, and a second sample should follow soon.
+    rates_pending: bool = false,
+    /// The last sample read the process list.
+    procs_read: bool = false,
     history: History = .{},
 
     hz: u64 = 100,
@@ -65,6 +82,7 @@ pub const Sampler = struct {
     prev_cpu: std.ArrayList(Cpu) = .empty,
     prev_disk: [2]u64 = .{ 0, 0 },
     prev_net: [2]u64 = .{ 0, 0 },
+    interfaces: backend.network.Interfaces = .{},
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io) Sampler {
         var s: Sampler = .{
@@ -112,6 +130,7 @@ pub const Sampler = struct {
         const l = backend.load.read(s.io);
         s.load = l.avg;
         s.uptime = l.uptime;
+        s.threads = l.threads;
         s.prev_time = now;
         s.samples += 1;
         s.history.cpu.push(s.cpu_pct);
@@ -132,15 +151,24 @@ pub const Sampler = struct {
     }
 
     fn collectProcs(s: *Sampler, dt: f64, first: bool) void {
+        if (!s.want.procs) {
+            s.procs = &.{};
+            s.process_count = s.reader.count(s.io);
+            s.procs_read = false;
+            s.rates_pending = false;
+            return;
+        }
+        // After a gap the earlier ticks are stale: measure from this sample on.
+        const fresh = first or !s.procs_read;
+        s.procs_read = true;
+        s.rates_pending = fresh;
         const a = s.arena.allocator();
         var list: std.ArrayList(Proc) = .empty;
-        s.reader.scan(s.io, a, &list);
+        s.process_count = s.reader.scan(s.io, a, &list, .{ .kernel_threads = s.want.kernel_threads });
         s.next_prev.clearRetainingCapacity();
-        s.threads = 0;
         for (list.items) |*p| {
-            s.threads += p.threads;
             if (s.prev.get(p.pid)) |old| {
-                if (old.start == p.start and !first) {
+                if (old.start == p.start and !fresh) {
                     const ticks = p.cpu_ticks -| old.ticks;
                     p.cpu = @floatCast(@as(f64, @floatFromInt(ticks)) * 100.0 / (@as(f64, @floatFromInt(s.hz)) * dt));
                     if (p.io_known) {
@@ -181,7 +209,7 @@ pub const Sampler = struct {
     }
 
     fn collectNet(s: *Sampler, dt: f64, first: bool) void {
-        const now_net = backend.network.read(s.io);
+        const now_net = backend.network.read(s.io, &s.interfaces);
         if (!first) {
             s.net_in_bps = rate(now_net[0], s.prev_net[0], dt);
             s.net_out_bps = rate(now_net[1], s.prev_net[1], dt);

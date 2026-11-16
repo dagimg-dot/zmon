@@ -23,7 +23,7 @@ pub fn cpu(c: *ui.Context, s: *State, k: theme.Colors) void {
         const r = ui.div(c).row().wFull().gap(28);
         defer r.end();
         stat(c, k, "Utilization", fmt.own(c.alloc(), fmt.percent(&b[0], s.sampler.cpu_pct)));
-        stat(c, k, "Processes", c.print("{d}", .{s.sampler.procs.len}));
+        stat(c, k, "Processes", c.print("{d}", .{s.sampler.process_count}));
         stat(c, k, "Threads", c.print("{d}", .{s.sampler.threads}));
         stat(c, k, "Up time", fmt.own(c.alloc(), fmt.duration(&b[1], s.sampler.uptime)));
         stat(c, k, "Load", c.print("{d:.2}  {d:.2}  {d:.2}", .{ s.sampler.load[0], s.sampler.load[1], s.sampler.load[2] }));

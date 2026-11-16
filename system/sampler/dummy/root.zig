@@ -23,6 +23,7 @@ pub const process = struct {
         _ = .{ io, pid, start, sig };
         return false;
     }
+    pub const ScanOptions = struct { kernel_threads: bool = true };
     pub const Reader = struct {
         pub fn init(gpa: std.mem.Allocator) Reader {
             _ = gpa;
@@ -31,8 +32,13 @@ pub const process = struct {
         pub fn deinit(r: *Reader) void {
             _ = r;
         }
-        pub fn scan(r: *Reader, io: std.Io, a: std.mem.Allocator, out: *std.ArrayList(core.Proc)) void {
-            _ = .{ r, io, a, out };
+        pub fn scan(r: *Reader, io: std.Io, a: std.mem.Allocator, out: *std.ArrayList(core.Proc), opts: ScanOptions) u32 {
+            _ = .{ r, io, a, out, opts };
+            return 0;
+        }
+        pub fn count(r: *Reader, io: std.Io) u32 {
+            _ = .{ r, io };
+            return 0;
         }
     };
 };
@@ -60,8 +66,9 @@ pub const disk = struct {
 };
 
 pub const network = struct {
-    pub fn read(io: std.Io) [2]u64 {
-        _ = io;
+    pub const Interfaces = struct {};
+    pub fn read(io: std.Io, interfaces: *Interfaces) [2]u64 {
+        _ = .{ io, interfaces };
         return .{ 0, 0 };
     }
 };
@@ -74,7 +81,7 @@ pub const machine = struct {
 };
 
 pub const load = struct {
-    pub const Load = struct { avg: [3]f32 = .{ 0, 0, 0 }, uptime: f64 = 0 };
+    pub const Load = struct { avg: [3]f32 = .{ 0, 0, 0 }, uptime: f64 = 0, threads: u32 = 0 };
     pub fn read(io: std.Io) Load {
         _ = io;
         return .{};

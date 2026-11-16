@@ -209,14 +209,21 @@ pub const State = struct {
 
     /// Samples when it is time; returns the seconds until the next.
     pub fn tick(s: *State, now: f64) f32 {
-        if (s.sampler.samples == 0 or now >= s.next_sample) {
+        // The process list is read only while something shows or watches it.
+        const want_procs = s.onList() or s.confirm or s.quit_watch != null;
+        s.sampler.want = .{ .procs = want_procs, .kernel_threads = s.settings.show_kernel_threads };
+        // Opening a list reads it at once rather than at the next second.
+        const stale = want_procs and !s.sampler.procs_read;
+        if (s.sampler.samples == 0 or now >= s.next_sample or stale) {
             s.sampler.collectNow(); // `now` only schedules: rates use the machine's clock
             s.rebuild();
             s.checkQuit();
             // Rates need two samples: the second comes quickly so the first screen isn't all zeros.
             // Keep to the second, not a second after each late frame, so a minute
             // of samples is a minute; after a stall, start again from now.
-            const period: f64 = if (s.sampler.samples <= 1) 0.3 else 1.0;
+            // Rates need two samples: when this one has nothing to measure
+            // against, the next comes soon so the list isn't all zeros for long.
+            const period: f64 = if (s.sampler.samples <= 1 or s.sampler.rates_pending) 0.3 else 1.0;
             s.next_sample = if (s.next_sample > 0 and now - s.next_sample < period) s.next_sample + period else now + period;
         }
         return @floatCast(@max(0.05, s.next_sample - now));

@@ -69,7 +69,7 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
             .icon = "cpu",
             .title = "CPU",
             .value = fmt.own(c.alloc(), fmt.percent(&b[0], smp.cpu_pct)),
-            .detail = c.print("{d} cores · {d} processes", .{ smp.cores.len, smp.procs.len }),
+            .detail = c.print("{d} cores · {d} processes", .{ smp.cores.len, smp.process_count }),
             .history = &h.cpu,
             .max = 100,
         } },

@@ -91,7 +91,27 @@ const Known = struct {
     exe: []const u8,
     /// The scan that last met it.
     seen: u32,
+    kthread: bool = false,
+    /// The scan that last read its stat (a hidden kernel thread is checked
+    /// only now and then).
+    checked: u32 = 0,
+    /// Its CPU ticks and memory when memory was last read, and when: an idle
+    /// process's memory is read again only every few scans.
+    ticks: u64 = 0,
+    memory: u64 = 0,
+    memory_scan: u32 = 0,
 };
+
+/// What a scan reads.
+pub const ScanOptions = struct {
+    /// Kernel threads are read; when hidden, each is checked only every
+    /// `recheck` scans, in case its pid now belongs to a new process.
+    kernel_threads: bool = true,
+};
+
+/// Scans between reads of what rarely changes: a hidden kernel thread's stat,
+/// an idle process's memory.
+const recheck = 5;
 
 /// Walks /proc. Owner and executable are read once per process and remembered,
 /// so a steady machine costs three small reads per process a sample: stat,
@@ -115,20 +135,30 @@ pub const Reader = struct {
 
     /// Appends every process to `out`; names are copied into `a`. Executable
     /// paths belong to the reader and last as long as their process.
-    pub fn scan(r: *Reader, io: std.Io, a: std.mem.Allocator, out: *std.ArrayList(Proc)) void {
+    /// Returns how many processes the machine has, read or not.
+    pub fn scan(r: *Reader, io: std.Io, a: std.mem.Allocator, out: *std.ArrayList(Proc), opts: ScanOptions) u32 {
         r.scans +%= 1;
         defer r.forget();
-        var dir = std.Io.Dir.cwd().openDir(io, "/proc", .{ .iterate = true }) catch return;
+        var dir = std.Io.Dir.cwd().openDir(io, "/proc", .{ .iterate = true }) catch return 0;
         defer dir.close(io);
         var it = dir.iterate();
         var buf: [4096]u8 = undefined;
         var path: [64]u8 = undefined;
+        var total: u32 = 0;
         while (it.next(io) catch null) |entry| {
             const pid = std.fmt.parseInt(i32, entry.name, 10) catch continue;
+            total += 1;
+            if (!opts.kernel_threads) if (r.known.getPtr(pid)) |k| {
+                if (k.kthread and r.scans -% k.checked < recheck) {
+                    k.seen = r.scans; // still there, just not read
+                    continue;
+                }
+            };
             const stat_text = files.read(io, dir, std.fmt.bufPrint(&path, "{d}/stat", .{pid}) catch continue, &buf) catch continue;
             const st = parseStat(stat_text) orelse continue;
             const kthread = st.flags & pf_kthread != 0;
-            const known = r.knownFor(io, dir, pid, st, kthread);
+            const known = r.knownFor(io, dir, pid, st, kthread) orelse continue;
+            if (kthread and !opts.kernel_threads) continue;
 
             // The name points into `buf`, which the next reads reuse: keep a copy.
             const comm = a.dupe(u8, st.comm) catch continue;
@@ -147,13 +177,21 @@ pub const Reader = struct {
             };
 
             if (!kthread) {
-                if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/statm", .{pid}) catch continue, &buf)) |statm| {
+                // Memory moves when a process runs: an idle one keeps its last
+                // figure for a few scans.
+                const idle = known.ticks == p.cpu_ticks and r.scans -% known.memory_scan < recheck and known.memory_scan != 0;
+                if (idle) {
+                    p.memory = known.memory;
+                } else if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/statm", .{pid}) catch continue, &buf)) |statm| {
                     var f = std.mem.tokenizeScalar(u8, statm, ' ');
                     _ = f.next();
                     const resident = std.fmt.parseInt(u64, f.next() orelse "0", 10) catch 0;
                     const shared = std.fmt.parseInt(u64, f.next() orelse "0", 10) catch 0;
                     p.memory = (resident -| shared) * r.page;
+                    known.memory = p.memory;
+                    known.memory_scan = r.scans;
                 } else |_| {}
+                known.ticks = p.cpu_ticks;
                 // Another user's I/O counters are refused unless we are root.
                 if (r.me == 0 or p.uid == r.me) {
                     if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
@@ -165,18 +203,21 @@ pub const Reader = struct {
             }
             out.append(a, p) catch break;
         }
+        return total;
     }
 
     /// The owner and executable of `pid`, read only when the process is new to
     /// the reader or has become another program. Kernel threads have neither.
-    fn knownFor(r: *Reader, io: std.Io, dir: std.Io.Dir, pid: i32, st: Stat, kthread: bool) Known {
+    /// The entry is valid until the next call (the map may grow).
+    fn knownFor(r: *Reader, io: std.Io, dir: std.Io.Dir, pid: i32, st: Stat, kthread: bool) ?*Known {
         const comm = std.hash.Wyhash.hash(0, st.comm);
-        var fresh: Known = .{ .start = st.start, .comm = comm, .uid = 0, .exe = "", .seen = r.scans };
-        const slot = r.known.getOrPut(r.gpa, pid) catch return fresh;
+        var fresh: Known = .{ .start = st.start, .comm = comm, .uid = 0, .exe = "", .seen = r.scans, .kthread = kthread, .checked = r.scans };
+        const slot = r.known.getOrPut(r.gpa, pid) catch return null;
         if (slot.found_existing) {
             if (slot.value_ptr.start == st.start and slot.value_ptr.comm == comm) {
                 slot.value_ptr.seen = r.scans;
-                return slot.value_ptr.*;
+                slot.value_ptr.checked = r.scans;
+                return slot.value_ptr;
             }
             r.gpa.free(slot.value_ptr.exe);
         }
@@ -192,7 +233,21 @@ pub const Reader = struct {
             }
         }
         slot.value_ptr.* = fresh;
-        return fresh;
+        return slot.value_ptr;
+    }
+
+    /// How many processes there are, from the directory alone: what the
+    /// device pages show when the lists, and the reads they need, are closed.
+    pub fn count(r: *Reader, io: std.Io) u32 {
+        _ = r;
+        var dir = std.Io.Dir.cwd().openDir(io, "/proc", .{ .iterate = true }) catch return 0;
+        defer dir.close(io);
+        var it = dir.iterate();
+        var n: u32 = 0;
+        while (it.next(io) catch null) |entry| {
+            if (entry.name.len > 0 and std.ascii.isDigit(entry.name[0])) n += 1;
+        }
+        return n;
     }
 
     /// Lets go of the processes the last scan didn't meet.
