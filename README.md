@@ -22,4 +22,4 @@ zig build test
 
 ## Credits
 
-Inspired by [Systo](https://github.com/MohammedIbrahim8887/systo). Drawn with [nanoui](https://github.com/justrach/nanoui) (MIT), in [Lexend](https://github.com/googlefonts/lexend) (SIL Open Font License, in `src/fonts`). The launcher entry parser comes from gize.
+Inspired by [Systo](https://github.com/MohammedIbrahim8887/systo). Drawn with [nanoui](https://github.com/justrach/nanoui) (MIT), in [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) (SIL Open Font License, in `src/fonts`). The launcher entry parser comes from gize.
