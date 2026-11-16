@@ -10,6 +10,8 @@
 const std = @import("std");
 const sampler = @import("sampler.zig");
 const procfs = @import("procfs.zig");
+const desktop = @import("desktop.zig");
+const xdg = @import("xdg.zig");
 const Proc = sampler.Proc;
 
 pub const Entry = struct {
@@ -37,21 +39,11 @@ pub const Index = struct {
         ix.arena.deinit();
     }
 
-    /// Reads every .desktop file under the standard application directories.
-    pub fn load(ix: *Index, io: std.Io, home: []const u8) void {
-        const a = ix.arena.allocator();
-        const dirs = [_][]const u8{
-            "/usr/share/applications",
-            "/usr/local/share/applications",
-            "/var/lib/flatpak/exports/share/applications",
-        };
+    /// Reads every .desktop file in the standard application directories. A
+    /// name an earlier (more specific) directory already claimed is kept.
+    pub fn load(ix: *Index, io: std.Io) void {
+        const dirs = xdg.applicationDirs(ix.arena.allocator()) catch return;
         for (dirs) |d| ix.loadDir(io, d);
-        if (home.len > 0) {
-            for ([_][]const u8{ ".local/share/applications", ".local/share/flatpak/exports/share/applications" }) |rel| {
-                const path = std.fs.path.join(a, &.{ home, rel }) catch continue;
-                ix.loadDir(io, path);
-            }
-        }
     }
 
     fn loadDir(ix: *Index, io: std.Io, path: []const u8) void {
@@ -68,11 +60,24 @@ pub const Index = struct {
 
     /// Adds the entry in `text` (the contents of a .desktop file called `id`).
     pub fn add(ix: *Index, id: []const u8, text: []const u8) void {
-        const e = parseDesktop(ix.arena.allocator(), id, text) orelse return;
+        const parsed = desktop.DesktopEntry.parse(text);
+        if (!parsed.is_app or parsed.name.len == 0) return;
+        const aa = ix.arena.allocator();
+        const e: Entry = .{
+            .name = aa.dupe(u8, parsed.name) catch return,
+            .icon = aa.dupe(u8, parsed.icon) catch "",
+            .program = aa.dupe(u8, desktop.extractExecBinary(parsed.exec) orelse "") catch "",
+            .wm_class = aa.dupe(u8, parsed.wm_class) catch "",
+            .id = aa.dupe(u8, id) catch "",
+            .hidden = parsed.no_display,
+        };
+        // A web app launcher (`brave --app-id=...`) runs the browser, which is not it:
+        // it must not claim the browser's program name.
+        const web_app = std.mem.indexOf(u8, parsed.exec, "--app-id=") != null or std.mem.indexOf(u8, parsed.exec, " --app=") != null;
         const at: u32 = @intCast(ix.entries.items.len);
         ix.entries.append(ix.arena.allocator(), e) catch return;
         const a = ix.arena.allocator();
-        for ([_][]const u8{ e.program, e.wm_class, e.id }) |key| {
+        for ([_][]const u8{ if (web_app) "" else e.program, e.wm_class, e.id }) |key| {
             if (key.len == 0) continue;
             const lower = std.ascii.allocLowerString(a, key) catch continue;
             // The first entry to claim a name keeps it.
@@ -89,59 +94,6 @@ pub const Index = struct {
         return &ix.entries.items[at];
     }
 };
-
-/// A launcher entry: a name to show and the program it runs.
-pub fn parseDesktop(a: std.mem.Allocator, id: []const u8, text: []const u8) ?Entry {
-    var in_entry = false;
-    var name: []const u8 = "";
-    var icon: []const u8 = "";
-    var exec: []const u8 = "";
-    var wm: []const u8 = "";
-    var hidden = false;
-    var is_app = true;
-    var lines = std.mem.tokenizeAny(u8, text, "\r\n");
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, " \t");
-        if (line.len == 0 or line[0] == '#') continue;
-        if (line[0] == '[') {
-            if (in_entry) break; // only the main group
-            in_entry = std.mem.eql(u8, line, "[Desktop Entry]");
-            continue;
-        }
-        if (!in_entry) continue;
-        const eq = std.mem.indexOfScalar(u8, line, '=') orelse continue;
-        const key = line[0..eq];
-        const value = line[eq + 1 ..];
-        if (std.mem.eql(u8, key, "Name")) name = value //
-        else if (std.mem.eql(u8, key, "Exec")) exec = value //
-        else if (std.mem.eql(u8, key, "Icon")) icon = value //
-        else if (std.mem.eql(u8, key, "StartupWMClass")) wm = value //
-        else if (std.mem.eql(u8, key, "NoDisplay")) hidden = std.mem.eql(u8, value, "true") //
-        else if (std.mem.eql(u8, key, "Type")) is_app = std.mem.eql(u8, value, "Application");
-    }
-    if (!is_app or name.len == 0) return null;
-    return .{
-        .name = a.dupe(u8, name) catch return null,
-        .icon = a.dupe(u8, icon) catch "",
-        .program = a.dupe(u8, execProgram(exec)) catch "",
-        .wm_class = a.dupe(u8, wm) catch "",
-        .id = a.dupe(u8, id) catch "",
-        .hidden = hidden,
-    };
-}
-
-/// The program an Exec line runs: past `env` and VAR=value words, without
-/// quotes or directories ("env FOO=1 /opt/x/bin/tool %U" is "tool").
-pub fn execProgram(exec: []const u8) []const u8 {
-    var it = std.mem.tokenizeScalar(u8, exec, ' ');
-    while (it.next()) |word| {
-        const w = std.mem.trim(u8, word, "\"'");
-        if (std.mem.eql(u8, w, "env")) continue;
-        if (std.mem.indexOfScalar(u8, w, '=') != null and w[0] != '/') continue;
-        return std.fs.path.basename(w);
-    }
-    return "";
-}
 
 pub const Kind = enum { app, background, kernel };
 
@@ -253,33 +205,33 @@ fn fake(pid: i32, ppid: i32, name: []const u8, exe: []const u8) Proc {
     return .{ .pid = pid, .ppid = ppid, .name = name, .exe = exe };
 }
 
-test "Exec lines name the program that runs" {
-    try std.testing.expectEqualStrings("firefox", execProgram("firefox %u"));
-    try std.testing.expectEqualStrings("tool", execProgram("env FOO=1 /opt/x/bin/tool %U"));
-    try std.testing.expectEqualStrings("code", execProgram("\"/usr/bin/code\" --unity-launch %F"));
-    try std.testing.expectEqualStrings("", execProgram(""));
-}
-
 test "a launcher entry is read from its main group only" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const text =
-        \\[Desktop Entry]
-        \\Type=Application
-        \\Name=Web Browser
-        \\Exec=/usr/lib/browser/browser-bin %u
-        \\Icon=browser
-        \\StartupWMClass=Browser
-        \\
-        \\[Desktop Action new-window]
-        \\Name=New Window
-        \\Exec=browser --new-window
-    ;
-    const e = parseDesktop(arena.allocator(), "browser", text).?;
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("browser", "[Desktop Entry]\nType=Application\nName=Web Browser\nExec=/usr/lib/browser/browser-bin %u\nIcon=browser\nStartupWMClass=Browser\n\n[Desktop Action new-window]\nName=New Window\nExec=browser --new-window\n");
+    const e = ix.lookup("browser-bin").?;
     try std.testing.expectEqualStrings("Web Browser", e.name);
-    try std.testing.expectEqualStrings("browser-bin", e.program);
     try std.testing.expectEqualStrings("browser", e.icon);
     try std.testing.expectEqualStrings("Browser", e.wm_class);
+    try std.testing.expect(ix.lookup("browser") == e); // the launcher's file name finds it too
+    try std.testing.expect(ix.lookup("BROWSER-BIN") == e);
+}
+
+test "a web app launcher does not take the browser's name" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("brave-abc-Default", "[Desktop Entry]\nType=Application\nName=Google Keep\nExec=brave --profile-directory=Default --app-id=abc\nStartupWMClass=crx_abc\n");
+    ix.add("brave-browser", "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave %U\n");
+    try std.testing.expectEqualStrings("Brave", ix.lookup("brave").?.name);
+    try std.testing.expectEqualStrings("Google Keep", ix.lookup("crx_abc").?.name);
+}
+
+test "the first entry to claim a name keeps it, so the user's own wins" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("tool", "[Desktop Entry]\nType=Application\nName=Mine\nExec=tool\n");
+    ix.add("tool", "[Desktop Entry]\nType=Application\nName=System\nExec=tool\n");
+    try std.testing.expectEqualStrings("Mine", ix.lookup("tool").?.name);
 }
 
 test "an app keeps its helpers; scaffolding does not swallow its apps" {

@@ -53,8 +53,7 @@ pub const State = struct {
             .built = .init(gpa),
             .toaster = .{ .gpa = gpa },
         };
-        const home = std.c.getenv("HOME");
-        s.index.load(io, if (home) |h| std.mem.span(h) else "");
+        s.index.load(io);
         return s;
     }
 
