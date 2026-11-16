@@ -5,6 +5,7 @@ pub const ring = @import("ring.zig");
 pub const fmt = @import("fmt.zig");
 pub const text = @import("text.zig");
 pub const settings = @import("settings.zig");
+pub const themes = @import("theme/root.zig");
 
 pub const Proc = types.Proc;
 pub const Memory = types.Memory;
@@ -17,6 +18,5 @@ test {
     _ = fmt;
     _ = text;
     _ = settings;
-    _ = @import("theme/color.zig");
-    _ = @import("theme/toml.zig");
+    _ = themes;
 }
