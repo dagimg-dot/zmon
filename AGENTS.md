@@ -11,12 +11,34 @@ Systo has no license. Read it for what the product does, never copy or translate
 - **Linux first.** Data comes from `/proc` and `/sys` with no helper process and no root. The only dependencies are nanoui and libc, and the one bundled asset is the Lexend font. Ask before adding anything else, SQLite for history included.
 - **`nui`** is nanoui's tool for checking an app without opening a window. It is built from a nanoui checkout with `zig build nui`. On this machine: `~/JDrive/Projects/rando/nanoui-src/nanoui/zig-out/bin/nui`.
 
+## Layout
+
+```
+core/     module zmon-core: plain data and helpers. No OS calls, no nanoui.
+  types.zig ring.zig fmt.zig text.zig
+system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui.
+  platform/   quiet file reads              linux/  dummy/
+  sampler/    rates and history             linux/{process,cpu,memory,disk,network,load,units}.zig  dummy/
+  apps/       launcher index, icons, grouping   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
+src/      the executable. The only place nanoui is imported.
+  main.zig    the window and its wiring
+  app/        state.zig (selection, sorting, sampling clock, ending tasks)  view.zig (sidebar and page switch)
+  ui/         theme.zig fonts.zig charts.zig  assets/fonts/
+  pages/      one folder per page: processes/ performance/  (root.zig is the page)
+  tests.zig   the views, rendered offscreen
+```
+
+- **A feature is a folder with a `root.zig`.** `root.zig` is its public API and its test aggregator. The data side lives in `system/<feature>/`, the page in `src/pages/<feature>/`.
+- **OS code sits in `linux/` and `dummy/` folders.** `root.zig` picks one with `switch (builtin.os.tag)`. The dummy backend returns empty values with the same signatures, so everything compiles on any OS. Compositor-specific code nests one level deeper (`window/linux/niri/`).
+- **Raw readers are separate from logic.** A `linux/` file reads one kind of counter and parses it; the code above it decides what the numbers mean.
+
 ## Rules
 
 - **Layering.**
-  - Imports go one way: `procfs`, `sampler`, `xdg`, `desktop`, `apps` and `icons` (data, no nanoui), then `app.zig` (state and the sampling clock), then the `*_view.zig` pages, with `fmt`, `theme` and `charts` as shared helpers.
-  - Data modules never import nanoui. A page never reads `/proc`.
+  - Imports go one way: `core`, then `system`, then `src`. The modules enforce it: `core` and `system` are built without nanoui, so importing it there fails to compile.
+  - Inside `src`: `app/state.zig` knows no page, `app/view.zig` knows the pages, a page knows `app/state.zig` and `ui/`, and `ui/` knows nothing of the pages.
   - Logic goes in the layer that owns it, never in `main.zig`.
+  - A new backend function must be referenced by its `root.zig` test (`std.testing.refAllDecls`), because Zig only analyses what is used and `check-cross` would otherwise never look inside it.
 - **Views.**
   - A view is a function of the state, drawn again on every input. Widgets report input as they are drawn.
   - Items in a list get a stable `ui.key`, so selection and animation follow the item as the list changes.
@@ -24,9 +46,9 @@ Systo has no license. Read it for what the product does, never copy or translate
 - **Frame memory.**
   - Text handed to `ui.text` is drawn after the function returns, so it must outlive it. Format with `c.print`, or copy a stack buffer with `fmt.own(c.alloc(), ...)`.
   - Never keep a slice into a buffer that is read again. Copy names out of the read buffer at once.
-  - nanoui draws images from the caller's memory, so icon bytes live in the `icons` cache for the whole run.
+  - nanoui draws images from the caller's memory, so icon bytes live in the `Icons` cache (`system/apps`) for the whole run.
 - **Reading /proc.**
-  - Go through `procfs.read`. It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
+  - Go through `files.read` (`system/platform`). It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
   - A process that vanishes or hides its files is skipped, never an error.
 - **Sampling.**
   - One sampler, on the UI thread, driven by `c.frameIn` from the view. Nothing polls while idle.
@@ -35,8 +57,8 @@ Systo has no license. Read it for what the product does, never copy or translate
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
   - Ask before adding anything that signals other users' processes or needs privilege.
 - **Look.**
-  - One typeface: Lexend, bundled in `src/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
-  - Every colour comes from `theme.zig`, which is monochrome: emphasis is weight and contrast, not hue. No raw hex colours in a page.
+  - One typeface: Lexend, bundled in `src/ui/assets/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
+  - Every colour comes from `src/ui/theme.zig`, which is monochrome: emphasis is weight and contrast, not hue. No raw hex colours in a page.
   - Words on screen are the ones a person uses ("Processes", "End task"), never internal terms, ids or counters that mean nothing to them.
 - **Privacy.** Never log or persist process command lines or environments.
 
@@ -59,9 +81,11 @@ Systo has no license. Read it for what the product does, never copy or translate
 Run both before reporting a change as done. Both must pass with 0 failures and 0 leaks:
 
 ```bash
-zig build check   # zig fmt --check + full build
-zig build test
+zig build check   # zig fmt --check + full build + check-cross
+zig build test    # test-core, test-system and test-ui together
 ```
+
+`zig build test-system` runs the machine readers without compiling nanoui, which is the quick loop for data changes. `zig build check-cross` builds the data layers for macOS without running them, so the dummy backends stay compiling.
 
 A visible change is also rendered and looked at:
 
