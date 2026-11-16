@@ -2,16 +2,10 @@
 //! under the user's data directory, then each of XDG_DATA_DIRS, then the
 //! flatpak and snap exports. Earlier directories win.
 const std = @import("std");
+const platform_env = @import("../../platform/root.zig").env;
 
-fn env(name: [:0]const u8) ?[]const u8 {
-    const v = std.c.getenv(name.ptr) orelse return null;
-    const s = std.mem.span(v);
-    return if (s.len == 0) null else s;
-}
-
-pub fn home() []const u8 {
-    return env("HOME") orelse ".";
-}
+const env = platform_env.get;
+pub const home = platform_env.home;
 
 const Dirs = struct {
     list: std.ArrayList([]const u8) = .empty,
