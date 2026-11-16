@@ -38,7 +38,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.reveal = null;
     while (rows.next()) |i| switch (s.app_rows[i]) {
         .group => |g| groupRow(c, s, k, s.groups[g], i),
-        .proc => |p| procRow(c, s, k, s.sampler.procs[p], i),
+        .proc => |p| procRow(c, s, k, s.sample.procs[p], i),
     };
     rows.end();
     if (s.pending_toggle) |root| {

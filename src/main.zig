@@ -21,6 +21,7 @@ pub fn main(init: nanoui.Init) !void {
     defer arena.deinit();
     var state: app_state.State = .init(init.gpa, init.io, system.config.location(arena.allocator()));
     defer state.deinit();
+    state.threaded = true;
     _ = try app.newWindow(.{
         .title = "zmon",
         .icon = icon.png,

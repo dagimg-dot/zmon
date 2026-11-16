@@ -34,7 +34,7 @@ test "Apps lists the apps that are open, and Processes every process" {
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Page.processes, state.page);
     try std.testing.expect(t.hasText("PID"));
-    try std.testing.expectEqual(state.sampler.procs.len, state.proc_rows.len); // the system's own tasks are shown by default
+    try std.testing.expectEqual(state.sample.procs.len, state.proc_rows.len); // the system's own tasks are shown by default
 }
 
 test "a device tile in the sidebar opens that device's page" {
@@ -68,7 +68,7 @@ test "clicking a column header sorts, and again reverses" {
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Sort.name, state.proc_order.key);
     try std.testing.expect(state.proc_order.ascending);
-    const procs = state.sampler.procs;
+    const procs = state.sample.procs;
     for (state.proc_rows[1..], state.proc_rows[0 .. state.proc_rows.len - 1]) |b, a|
         try std.testing.expect(!std.ascii.lessThanIgnoreCase(procs[b].name, procs[a].name));
     try t.clickText("Name");
@@ -93,7 +93,7 @@ test "searching Processes keeps the processes whose name or pid matches" {
     try std.testing.expectEqualStrings("1", state.search.text());
     try std.testing.expect(state.proc_rows.len > 0 and state.proc_rows.len < all);
     for (state.proc_rows) |i| {
-        const p = state.sampler.procs[i];
+        const p = state.sample.procs[i];
         var b: [16]u8 = undefined;
         const pid = try std.fmt.bufPrint(&b, "{d}", .{p.pid});
         try std.testing.expect(std.mem.indexOf(u8, p.name, "1") != null or pid[0] == '1');
@@ -209,7 +209,7 @@ test "turning off the system's own tasks takes the kernel's threads out of Proce
     try t.clickText("Show the system's own tasks");
     t.settle(0.2);
     try std.testing.expect(!state.settings.show_kernel_threads);
-    for (state.proc_rows) |i| try std.testing.expect(!state.sampler.procs[i].kthread);
+    for (state.proc_rows) |i| try std.testing.expect(!state.sample.procs[i].kthread);
 }
 
 test "Reset to defaults brings back Graphite and the default switches" {
@@ -300,7 +300,7 @@ test "typing on a list starts a search, and Escape clears it" {
     _ = t.shortcut(.{ .key = ui.Shortcut.escape });
     t.settle(0.2);
     try std.testing.expectEqualStrings("", state.search.text());
-    try std.testing.expectEqual(state.sampler.procs.len, state.proc_rows.len); // every process again (the count moves as they come and go)
+    try std.testing.expectEqual(state.sample.procs.len, state.proc_rows.len); // every process again (the count moves as they come and go)
 }
 
 test "Ctrl+number opens pages, Ctrl+comma Settings, and Ctrl+? the shortcuts" {
@@ -616,7 +616,7 @@ test "End task acts only on a selection that can be seen" {
     state.page = .processes;
     _ = state.tick(0);
     if (state.proc_rows.len == 0) return error.SkipZigTest;
-    state.selected_proc = state.sampler.procs[state.proc_rows[0]].pid;
+    state.selected_proc = state.sample.procs[state.proc_rows[0]].pid;
     try std.testing.expect(state.target() != null);
     state.search.set("no process is called this");
     state.rebuild();
@@ -653,4 +653,22 @@ test "a process that ignores End task is reported still running, and Force quit 
     try std.testing.expect(toasted(&state, "Stopped"));
     const term = try child.wait(io);
     try std.testing.expect(term == .signal);
+}
+
+test "with the sampler on its own thread, samples arrive and wake the view" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit(); // stops and joins the thread
+    state.dark = false;
+    state.threaded = true;
+    state.page = .processes;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(state.worker.running());
+    const clock = @import("zmon-system").platform.clock;
+    const until = clock.now() + 5;
+    while (state.sample.samples < 2 and clock.now() < until) t.pump(0.2);
+    try std.testing.expect(state.sample.samples >= 2);
+    try std.testing.expect(state.sample.procs_read);
+    try std.testing.expect(state.proc_rows.len > 0);
 }

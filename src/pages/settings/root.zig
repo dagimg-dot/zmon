@@ -168,7 +168,7 @@ fn about(c: *ui.Context, s: *State, k: theme.Colors) void {
         ui.text(c, "Version 0.0.1", .{ .size = 12, .color = k.tertiary });
     }
     const rows = [_]struct { key: []const u8, label: []const u8, value: []const u8 }{
-        .{ .key = "machine", .label = "This machine", .value = if (s.sampler.machine().len > 0) s.sampler.machine() else "Unknown" },
+        .{ .key = "machine", .label = "This machine", .value = if (s.sample.machine().len > 0) s.sample.machine() else "Unknown" },
         .{ .key = "typeface", .label = "Typeface", .value = "Lexend" },
         .{ .key = "themes", .label = "Themes", .value = c.print("{d}: Graphite by zmon, the rest ported from vicinae (GPL-3.0), palettes by their authors", .{s.themes.themes.items.len}) },
     };

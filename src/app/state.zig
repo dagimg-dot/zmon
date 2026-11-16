@@ -1,6 +1,7 @@
 //! zmon's state: what is selected, how the list is sorted, the sample the
-//! pages show, the settings and the themes. The sampler runs from the view's
-//! clock, once a second.
+//! pages show, the settings and the themes. Samples come from the sampler's
+//! own thread (system/sampler/worker.zig) as snapshots; the state only reads
+//! them. Without the thread (tests), `tick` takes them itself, once a second.
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
@@ -41,7 +42,14 @@ const QuitWatch = struct {
 
 pub const State = struct {
     gpa: std.mem.Allocator,
-    sampler: system.sampler.Sampler,
+    /// Samples the machine, on its own thread once `startSampling` runs.
+    worker: *system.sampler.Worker,
+    /// The sample the pages show: the worker's, read-only, until the next one.
+    sample: *const system.sampler.Snapshot,
+    /// Sample on the worker's thread (the app); tests leave it off and sample in `tick`.
+    threaded: bool = false,
+    /// What was last asked of the worker, to wake it only when that changes.
+    asked: system.sampler.Want = .{},
     index: apps.Index,
     icons: apps.Icons,
     /// Groups and lists of the current sample; replaced with every sample.
@@ -112,10 +120,12 @@ pub const State = struct {
     save_failed: bool = false,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, config: ?system.config.Location) State {
+        const worker = system.sampler.Worker.create(gpa, io) catch @panic("out of memory");
         var s: State = .{
             .gpa = gpa,
             .io = io,
-            .sampler = .init(gpa, io),
+            .worker = undefined,
+            .sample = undefined,
             .index = .init(gpa),
             .icons = .init(gpa, io),
             .built = .init(gpa),
@@ -123,6 +133,8 @@ pub const State = struct {
             .themes = .init(gpa),
             .config_arena = .init(gpa),
         };
+        s.worker = worker;
+        s.sample = worker.current();
         apps.loadEntries(&s.index, io);
         if (config) |at| {
             const a = s.config_arena.allocator();
@@ -204,36 +216,53 @@ pub const State = struct {
         s.built.deinit();
         s.icons.deinit();
         s.index.deinit();
-        s.sampler.deinit();
+        s.worker.destroy();
     }
 
-    /// Samples when it is time; returns the seconds until the next.
+    /// Samples on the worker's own thread from now on; `waker` asks the
+    /// window for a frame when a sample is ready.
+    pub fn startSampling(s: *State, waker: ?system.sampler.Waker) void {
+        s.worker.start(waker) catch {}; // without a thread, `tick` samples
+    }
+
+    /// Tells the worker what to read, takes a new sample if one came (or,
+    /// without the thread, takes one when it is time), and returns how soon
+    /// the view should look again.
     pub fn tick(s: *State, now: f64) f32 {
         // The process list is read only while something shows or watches it.
-        const want_procs = s.onList() or s.confirm or s.quit_watch != null;
-        s.sampler.want = .{ .procs = want_procs, .kernel_threads = s.settings.show_kernel_threads };
+        const want: system.sampler.Want = .{
+            .procs = s.onList() or s.confirm or s.quit_watch != null,
+            .kernel_threads = s.settings.show_kernel_threads,
+        };
         // Opening a list reads it at once rather than at the next second.
-        const stale = want_procs and !s.sampler.procs_read;
-        if (s.sampler.samples == 0 or now >= s.next_sample or stale) {
-            s.sampler.collectNow(); // `now` only schedules: rates use the machine's clock
+        const stale = want.procs and !s.sample.procs_read;
+        const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads;
+        s.worker.ask(want, stale and changed);
+        s.asked = want;
+        var wait: f64 = 1.0; // a sample wakes the view itself; this is a fallback
+        if (!s.worker.running()) {
+            if (s.sample.samples == 0 or now >= s.next_sample or stale) {
+                s.worker.step(); // `now` only schedules: rates use the machine's clock
+                // On the second, not a second after each late frame; soon when the
+                // sample has nothing to measure rates against; after a stall, from now.
+                const period: f64 = if (s.worker.ratesPending()) 0.3 else 1.0;
+                s.next_sample = if (s.next_sample > 0 and now - s.next_sample < period) s.next_sample + period else now + period;
+            }
+            wait = s.next_sample - now;
+        }
+        if (s.worker.take()) |snap| {
+            s.sample = snap;
             s.rebuild();
             s.checkQuit();
-            // Rates need two samples: the second comes quickly so the first screen isn't all zeros.
-            // Keep to the second, not a second after each late frame, so a minute
-            // of samples is a minute; after a stall, start again from now.
-            // Rates need two samples: when this one has nothing to measure
-            // against, the next comes soon so the list isn't all zeros for long.
-            const period: f64 = if (s.sampler.samples <= 1 or s.sampler.rates_pending) 0.3 else 1.0;
-            s.next_sample = if (s.next_sample > 0 and now - s.next_sample < period) s.next_sample + period else now + period;
         }
-        return @floatCast(@max(0.05, s.next_sample - now));
+        return @floatCast(@max(0.05, wait));
     }
 
     /// Regroups the sample and lays out both lists.
     pub fn rebuild(s: *State) void {
         _ = s.built.reset(.retain_capacity);
         const a = s.built.allocator();
-        const procs = s.sampler.procs;
+        const procs = s.sample.procs;
         s.groups = apps.group(a, procs, &s.index) catch &.{};
         std.mem.sort(apps.Group, s.groups, GroupOrder{ .o = s.app_order }, GroupOrder.less);
         s.owner = a.alloc(u32, procs.len) catch &.{};
@@ -317,7 +346,7 @@ pub const State = struct {
     fn appMatches(s: *const State, g: apps.Group) bool {
         const query = std.mem.trim(u8, s.search.text(), " ");
         if (query.len == 0 or core.search.containsIgnoreCase(g.name, query)) return true;
-        for (g.members) |m| if (core.search.matches(s.sampler.procs[m], query)) return true;
+        for (g.members) |m| if (core.search.matches(s.sample.procs[m], query)) return true;
         return false;
     }
 
@@ -328,7 +357,7 @@ pub const State = struct {
             try rows.append(a, .{ .group = @intCast(gi) });
             if (g.members.len > 1 and s.expanded.contains(g.root)) {
                 const kids = try a.dupe(u32, g.members[1..]);
-                std.mem.sort(u32, kids, s.sampler.procs, busier);
+                std.mem.sort(u32, kids, s.sample.procs, busier);
                 for (kids) |m| try rows.append(a, .{ .proc = m });
             }
         }
@@ -336,7 +365,7 @@ pub const State = struct {
     }
 
     fn procRows(s: *State, a: std.mem.Allocator) ![]u32 {
-        const procs = s.sampler.procs;
+        const procs = s.sample.procs;
         var rows: std.ArrayList(u32) = .empty;
         for (procs, 0..) |p, i| {
             if (p.kthread and !s.settings.show_kernel_threads) continue;
@@ -400,12 +429,12 @@ pub const State = struct {
             .apps => for (s.app_rows, 0..) |r, i| {
                 const pid = switch (r) {
                     .group => |g| s.groups[g].root,
-                    .proc => |p| s.sampler.procs[p].pid,
+                    .proc => |p| s.sample.procs[p].pid,
                 };
                 if (pid == s.selected_app) return i;
             },
             .processes => for (s.proc_rows, 0..) |p, i| {
-                if (s.sampler.procs[p].pid == s.selected_proc) return i;
+                if (s.sample.procs[p].pid == s.selected_proc) return i;
             },
             else => {},
         }
@@ -424,9 +453,9 @@ pub const State = struct {
         switch (s.page) {
             .apps => s.selected_app = switch (s.app_rows[i]) {
                 .group => |g| s.groups[g].root,
-                .proc => |p| s.sampler.procs[p].pid,
+                .proc => |p| s.sample.procs[p].pid,
             },
-            .processes => s.selected_proc = s.sampler.procs[s.proc_rows[i]].pid,
+            .processes => s.selected_proc = s.sample.procs[s.proc_rows[i]].pid,
             else => return,
         }
         s.reveal = i;
@@ -503,7 +532,7 @@ pub const State = struct {
         // Only what can be seen: not a row a search or a closed app hides.
         if (s.selectedRow() == null) return null;
         if (s.selectedGroup()) |g| return .{ .name = g.name, .count = g.members.len };
-        if (s.sampler.find(pid)) |p| return .{ .name = p.name, .count = 1 };
+        if (s.sample.find(pid)) |p| return .{ .name = p.name, .count = 1 };
         return null;
     }
 
@@ -516,7 +545,7 @@ pub const State = struct {
         const control = system.sampler.control;
         const me = control.currentUid();
         const self = control.selfPid();
-        const procs = s.sampler.procs;
+        const procs = s.sample.procs;
         var one = [_]u32{0};
         const members: []const u32 = if (s.selectedGroup()) |g| g.members else blk: {
             const pid = s.selected();
@@ -532,7 +561,7 @@ pub const State = struct {
                 refused += 1;
                 continue;
             }
-            if (control.signal(s.sampler.io, p.pid, p.start, if (force) .kill else .quit)) sent += 1;
+            if (control.signal(s.io, p.pid, p.start, if (force) .kill else .quit)) sent += 1;
         }
         const name = if (s.target()) |x| x.name else "it";
         if (sent > 0) {
@@ -557,12 +586,12 @@ pub const State = struct {
     /// Remembers what was asked to quit, to say so if it is still running a
     /// few samples later, when Force quit is what's needed.
     fn watchQuit(s: *State, name: []const u8, members: []const u32) void {
-        var w: QuitWatch = .{ .due = s.sampler.samples + quit_wait };
+        var w: QuitWatch = .{ .due = s.sample.samples + quit_wait };
         w.name_len = @intCast(@min(name.len, w.name.len));
         @memcpy(w.name[0..w.name_len], name[0..w.name_len]);
         for (members) |i| {
             if (w.len == w.procs.len) break;
-            const p = s.sampler.procs[i];
+            const p = s.sample.procs[i];
             w.procs[w.len] = .{ .pid = p.pid, .start = p.start };
             w.len += 1;
         }
@@ -572,11 +601,11 @@ pub const State = struct {
     /// After a quit was asked: still running a few seconds on, say so.
     fn checkQuit(s: *State) void {
         const w = s.quit_watch orelse return;
-        if (s.sampler.samples < w.due) return;
+        if (s.sample.samples < w.due) return;
         s.quit_watch = null;
         var alive: usize = 0;
         for (w.procs[0..w.len]) |q| {
-            for (s.sampler.procs) |p| if (p.pid == q.pid and p.start == q.start) {
+            for (s.sample.procs) |p| if (p.pid == q.pid and p.start == q.start) {
                 alive += 1;
                 break;
             };

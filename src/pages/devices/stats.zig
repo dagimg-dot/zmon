@@ -22,16 +22,16 @@ pub fn cpu(c: *ui.Context, s: *State, k: theme.Colors) void {
     {
         const r = ui.div(c).row().wFull().gap(28);
         defer r.end();
-        stat(c, k, "Utilization", fmt.own(c.alloc(), fmt.percent(&b[0], s.sampler.cpu_pct)));
-        stat(c, k, "Processes", c.print("{d}", .{s.sampler.process_count}));
-        stat(c, k, "Threads", c.print("{d}", .{s.sampler.threads}));
-        stat(c, k, "Up time", fmt.own(c.alloc(), fmt.duration(&b[1], s.sampler.uptime)));
-        stat(c, k, "Load", c.print("{d:.2}  {d:.2}  {d:.2}", .{ s.sampler.load[0], s.sampler.load[1], s.sampler.load[2] }));
+        stat(c, k, "Utilization", fmt.own(c.alloc(), fmt.percent(&b[0], s.sample.cpu_pct)));
+        stat(c, k, "Processes", c.print("{d}", .{s.sample.process_count}));
+        stat(c, k, "Threads", c.print("{d}", .{s.sample.threads}));
+        stat(c, k, "Up time", fmt.own(c.alloc(), fmt.duration(&b[1], s.sample.uptime)));
+        stat(c, k, "Load", c.print("{d:.2}  {d:.2}  {d:.2}", .{ s.sample.load[0], s.sample.load[1], s.sample.load[2] }));
     }
     ui.text(c, "Cores", .{ .size = 12.5, .weight = .semibold, .color = k.secondary });
     const grid = ui.div(c).row().wFull().gap(6).itemsEnd();
     defer grid.end();
-    for (s.sampler.cores, 0..) |v, i| {
+    for (s.sample.cores, 0..) |v, i| {
         ui.key(c, c.print("core{d}", .{i}));
         const col = ui.div(c).column().grow().w(0).gap(4).itemsCenter();
         defer col.end();
@@ -46,7 +46,7 @@ pub fn cpu(c: *ui.Context, s: *State, k: theme.Colors) void {
 }
 
 pub fn memory(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const m = s.sampler.memory;
+    const m = s.sample.memory;
     var b: [5][32]u8 = undefined;
     const r = ui.div(c).row().wFull().gap(28);
     defer r.end();

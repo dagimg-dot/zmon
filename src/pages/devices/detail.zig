@@ -14,13 +14,13 @@ const State = app.State;
 pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
     const col = ui.div(c).column().wFull().grow().h(0).p(24).gap(18).scrollY();
     defer col.end();
-    const h = &s.sampler.history;
+    const h = &s.sample.history;
     const span = s.settings.span.seconds();
     switch (s.page) {
         .apps, .processes, .settings => {},
         .cpu => {
-            const machine = s.sampler.machine();
-            heading(c, k, "CPU", if (machine.len > 0) machine else c.print("{d} cores", .{s.sampler.cores.len}));
+            const machine = s.sample.machine();
+            heading(c, k, "CPU", if (machine.len > 0) machine else c.print("{d} cores", .{s.sample.cores.len}));
             charts.area(c, &h.cpu, .{ .height = 220, .max = 100, .window = span, .color = k.cpu, .grid = k.separator });
             stats.cpu(c, s, k);
         },
@@ -35,8 +35,8 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
             var b: [2][24]u8 = undefined;
             const r = ui.div(c).row().wFull().gap(28);
             defer r.end();
-            stats.stat(c, k, "Read", fmt.own(c.alloc(), fmt.rate(&b[0], s.sampler.disk_read_bps)));
-            stats.stat(c, k, "Write", fmt.own(c.alloc(), fmt.rate(&b[1], s.sampler.disk_write_bps)));
+            stats.stat(c, k, "Read", fmt.own(c.alloc(), fmt.rate(&b[0], s.sample.disk_read_bps)));
+            stats.stat(c, k, "Write", fmt.own(c.alloc(), fmt.rate(&b[1], s.sample.disk_write_bps)));
         },
         .network => {
             heading(c, k, "Network", "download solid, upload lighter");
@@ -44,8 +44,8 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
             var b: [2][24]u8 = undefined;
             const r = ui.div(c).row().wFull().gap(28);
             defer r.end();
-            stats.stat(c, k, "Download", fmt.own(c.alloc(), fmt.rate(&b[0], s.sampler.net_in_bps)));
-            stats.stat(c, k, "Upload", fmt.own(c.alloc(), fmt.rate(&b[1], s.sampler.net_out_bps)));
+            stats.stat(c, k, "Download", fmt.own(c.alloc(), fmt.rate(&b[0], s.sample.net_in_bps)));
+            stats.stat(c, k, "Upload", fmt.own(c.alloc(), fmt.rate(&b[1], s.sample.net_out_bps)));
         },
     }
 }

@@ -15,6 +15,7 @@ const sidebar = @import("sidebar.zig");
 const settings_page = @import("../pages/settings/root.zig");
 
 const State = state.State;
+const system = @import("zmon-system");
 
 pub fn view(s: *State, c: *ui.Context) void {
     if (s.reload_themes) {
@@ -28,6 +29,11 @@ pub fn view(s: *State, c: *ui.Context) void {
     const chosen = theme.uiTheme(k);
     c.theme = chosen;
     c.theme_chosen = chosen;
+    if (s.threaded and !s.worker.running()) {
+        // The worker asks for a frame through the window when a sample is ready.
+        const w: ?system.sampler.Waker = if (c.waker) |wk| .{ .ctx = wk.ctx, .wake = wk.wake } else null;
+        s.startSampling(w);
+    }
     c.frameIn(s.tick(c.time));
     c.setZoom(s.settings.text_size.scale());
     reduceMotion(c, s);

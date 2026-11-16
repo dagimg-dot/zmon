@@ -33,7 +33,7 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     var b: [2][32]u8 = undefined;
     const r = ui.div(c).row().wFull().px(8).pt(10);
     defer r.end();
-    ui.text(c, c.print("Up {s} · load {d:.1}", .{ fmt.duration(&b[0], s.sampler.uptime), s.sampler.load[0] }), .{ .size = 11, .color = k.tertiary });
+    ui.text(c, c.print("Up {s} · load {d:.1}", .{ fmt.duration(&b[0], s.sample.uptime), s.sample.load[0] }), .{ .size = 11, .color = k.tertiary });
 }
 
 fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8) void {
@@ -57,7 +57,7 @@ fn section(c: *ui.Context, k: theme.Colors, title: []const u8) void {
 }
 
 fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const smp = &s.sampler;
+    const smp = s.sample;
     const h = &smp.history;
     const mem = smp.memory;
     var b: [4][32]u8 = undefined;

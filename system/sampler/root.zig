@@ -17,6 +17,9 @@ const Memory = core.Memory;
 const Ring = core.Ring;
 const Cpu = backend.cpu.Times;
 
+pub const Worker = @import("worker.zig").Worker;
+pub const Waker = @import("worker.zig").Waker;
+
 /// Ending tasks: who we are, and signals that only reach the process that was sampled.
 pub const control = struct {
     pub const Signal = backend.process.Signal;
@@ -218,6 +221,83 @@ pub const Sampler = struct {
     }
 };
 
+/// One sample as the app reads it: the sampler's results copied out, names
+/// and paths included, so the sampler can go on reading on its own thread.
+pub const Snapshot = struct {
+    arena: std.heap.ArenaAllocator,
+    procs: []Proc = &.{},
+    cores: []f32 = &.{},
+    cpu_pct: f32 = 0,
+    memory: Memory = .{},
+    load: [3]f32 = .{ 0, 0, 0 },
+    uptime: f64 = 0,
+    disk_read_bps: f32 = 0,
+    disk_write_bps: f32 = 0,
+    net_in_bps: f32 = 0,
+    net_out_bps: f32 = 0,
+    threads: u32 = 0,
+    process_count: u32 = 0,
+    /// Samples taken so far, this one included (0: none yet).
+    samples: u64 = 0,
+    /// It read the process list.
+    procs_read: bool = false,
+    history: History = .{},
+    machine_buf: [128]u8 = undefined,
+    machine_len: usize = 0,
+
+    pub fn init(gpa: std.mem.Allocator) Snapshot {
+        return .{ .arena = .init(gpa) };
+    }
+
+    pub fn deinit(sn: *Snapshot) void {
+        sn.arena.deinit();
+    }
+
+    /// What the machine is called; "" when nothing says.
+    pub fn machine(sn: *const Snapshot) []const u8 {
+        return sn.machine_buf[0..sn.machine_len];
+    }
+
+    /// The process with this pid in the sample.
+    pub fn find(sn: *const Snapshot, pid: i32) ?*const Proc {
+        for (sn.procs) |*p| if (p.pid == pid) return p;
+        return null;
+    }
+
+    /// Copies the sampler's last sample in, replacing what was here.
+    pub fn fill(sn: *Snapshot, s: *const Sampler) void {
+        _ = sn.arena.reset(.retain_capacity);
+        const a = sn.arena.allocator();
+        sn.procs = &.{};
+        if (a.alloc(Proc, s.procs.len)) |procs| {
+            for (procs, s.procs) |*d, p| {
+                d.* = p;
+                // The reader owns these and lets them go when a process ends.
+                d.comm = a.dupe(u8, p.comm) catch "";
+                d.exe = a.dupe(u8, p.exe) catch "";
+                d.name = a.dupe(u8, p.name) catch "";
+            }
+            sn.procs = procs;
+        } else |_| {}
+        sn.cores = a.dupe(f32, s.cores) catch &.{};
+        sn.cpu_pct = s.cpu_pct;
+        sn.memory = s.memory;
+        sn.load = s.load;
+        sn.uptime = s.uptime;
+        sn.disk_read_bps = s.disk_read_bps;
+        sn.disk_write_bps = s.disk_write_bps;
+        sn.net_in_bps = s.net_in_bps;
+        sn.net_out_bps = s.net_out_bps;
+        sn.threads = s.threads;
+        sn.process_count = s.process_count;
+        sn.samples = s.samples;
+        sn.procs_read = s.procs_read;
+        sn.history = s.history;
+        sn.machine_buf = s.machine_buf;
+        sn.machine_len = s.machine_len;
+    }
+};
+
 fn rate(now: u64, before: u64, dt: f64) f32 {
     return @floatCast(@as(f64, @floatFromInt(now -| before)) / dt);
 }
@@ -248,6 +328,21 @@ test "the sampler and its backend compile on every OS" {
     std.testing.refAllDecls(backend.load);
     std.testing.refAllDecls(backend.machine);
     std.testing.refAllDecls(Sampler);
+    std.testing.refAllDecls(Snapshot);
+    std.testing.refAllDecls(Worker);
+}
+
+test "a snapshot owns its names, so the sampler can drop its own" {
+    var s = Sampler.init(std.testing.allocator, std.testing.io);
+    defer s.deinit();
+    s.collect(1.0);
+    var sn = Snapshot.init(std.testing.allocator);
+    defer sn.deinit();
+    sn.fill(&s);
+    try std.testing.expectEqual(s.procs.len, sn.procs.len);
+    if (sn.procs.len > 0) try std.testing.expect(sn.procs[0].name.ptr != s.procs[0].name.ptr);
+    s.collect(2.0); // the sampler's own memory is reused here
+    for (sn.procs) |p| _ = std.mem.indexOfScalar(u8, p.name, 0); // still readable
 }
 
 test "the live machine: this test process is found, and the totals are sane" {

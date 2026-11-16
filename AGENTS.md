@@ -55,7 +55,8 @@ src/      the executable. The only place nanoui is imported.
   - Go through `files.read` (`system/platform`). It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
   - A process that vanishes or hides its files is skipped, never an error.
 - **Sampling.**
-  - One sampler, on the UI thread, driven by `c.frameIn` from the view. Nothing polls while idle.
+  - One sampler, on its own thread (`system/sampler/worker.zig`): reading /proc costs 8 to 17 ms a sample on a slow-clocked core, which stalled a frame a second on the UI thread. Only the worker touches the `Sampler`; the app reads `Snapshot`s, handed over through a lock-free triple buffer, and the worker wakes the view when one is ready. Nothing polls while idle.
+  - The app tells the worker what to read (`Worker.ask`): the process list only while a list is open or a quit is being watched. Tests leave `State.threaded` off and `tick` samples on the test's thread through the same hand-over (`Worker.step`).
   - Work that can block a frame, such as scanning a disk, runs on a worker thread and reports back through state.
 - **Ending tasks.**
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
