@@ -72,8 +72,3 @@ fn series(c: *ui.Context, cv: *ui.Canvas, ring: *const core.Ring(f32), window: u
     }
     cv.polyline(pts, .{ .width = 1.6, .color = color });
 }
-
-/// A small chart for a tile: no gridlines, no second series.
-pub fn spark(c: *ui.Context, ring: *const core.Ring(f32), height: f32, max: ?f32, color: ui.Color) void {
-    area(c, ring, .{ .height = height, .max = max, .color = color, .grid = .hex(0x00000000), .grid_lines = 0 });
-}

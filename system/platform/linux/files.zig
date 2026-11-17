@@ -46,6 +46,12 @@ pub fn readWhole(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) Error
     return text;
 }
 
+/// Whether `path` exists, and with `readable`, whether it can be read,
+/// without opening it.
+pub fn exists(path: [*:0]const u8, readable: bool) bool {
+    return std.c.access(path, if (readable) 4 else 0) == 0;
+}
+
 /// The target of the symbolic link `path` (relative to `dir`), or null.
 pub fn link(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) ?[]u8 {
     _ = io;

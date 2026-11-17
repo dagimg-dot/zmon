@@ -2,7 +2,7 @@
 //! TOML file. Unknown keys are ignored and a bad value keeps its default, so
 //! an old or hand-edited file never stops zmon from starting.
 const std = @import("std");
-const toml = @import("theme/toml.zig");
+const toml = @import("toml.zig");
 
 pub const Appearance = enum { system, light, dark };
 

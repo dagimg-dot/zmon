@@ -126,7 +126,7 @@ pub const Cache = struct {
                 inline for (.{ "{s}/{s}/apps/{s}.{s}", "{s}/apps/{s}/{s}.{s}" }) |layout| {
                     if (p.score > best) {
                         if (std.fmt.bufPrintSentinel(&buf, layout, .{ theme, p.dir, name, p.ext }, 0)) |path| {
-                            if (std.c.access(path.ptr, 4) == 0) {
+                            if (files.exists(path.ptr, true)) {
                                 best = p.score;
                                 // `path` lives in `buf`, which the next probe overwrites.
                                 best_path = c.arena.allocator().dupe(u8, path) catch null;
@@ -144,7 +144,7 @@ pub const Cache = struct {
         var buf: [1024]u8 = undefined;
         for (c.loose) |dir| for ([_][]const u8{ "png", "svg" }) |ext| {
             const path = std.fmt.bufPrintSentinel(&buf, "{s}/{s}.{s}", .{ dir, name, ext }, 0) catch continue;
-            if (std.c.access(path.ptr, 4) == 0) if (c.load(path)) |icon| return icon;
+            if (files.exists(path.ptr, true)) if (c.load(path)) |icon| return icon;
         };
         return null;
     }

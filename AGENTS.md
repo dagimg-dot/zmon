@@ -15,22 +15,27 @@ Systo has no license. Read it for what the product does, never copy or translate
 
 ```
 core/     module zmon-core: plain data and helpers. No OS calls, no nanoui.
-  types.zig ring.zig fmt.zig text.zig search.zig focus.zig (the focus stack) settings.zig (the settings and their file)
-  theme/      colours, a TOML subset, the theme model and resolver, builtin.zig  themes/ (one .toml per theme)
+  types.zig (processes, memory, a process's details)  devices.zig (disks, filesystems, interfaces, sensors, battery, pressure)
+  ring.zig (an hour of history)  fmt.zig  text.zig  search.zig  focus.zig (the focus stack)  toml.zig (a TOML subset)
+  settings.zig (the settings and their file)
+  theme/      colours, the theme model and resolver, builtin.zig  themes/ (one .toml per theme)
 system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui.
-  platform/   quiet file reads              linux/  dummy/
-  sampler/    rates and history, the worker thread and its snapshots   linux/{process,details,cpu,memory,disk,network,load,machine,units}.zig  dummy/
-  apps/       launcher index, icons, grouping   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
+  platform/   quiet file reads, the clock, the environment   linux/  dummy/
+  sampler/    the sampler, rates and history; worker.zig (its thread) and the snapshots the app reads
+              linux/{process,details,devices,cpu,memory,disk,network,load,machine,units}.zig  dummy/
+  apps/       launcher index, icons, grouping by systemd unit and process tree   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
   config/     the settings file and the user's theme folder (XDG)   linux/  dummy/
   users/      account names by uid, from /etc/passwd   linux/  dummy/
   desktop/    the program's name for the shell, which matches it to zmon.desktop   linux/  dummy/
 src/      the executable. The only place nanoui is imported.
   main.zig    the window and its wiring
-  app/        state.zig (lists, selection, sorting, sampling clock, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
+  app/        state.zig (lists, selection, sorting, held order, ending tasks, settings and themes)  sidebar.zig (pages and device tiles)  view.zig (page switch)
               details.zig (the details pane)  keys.zig (shortcuts)  focus.zig (stepping in, Escape back)  shortcuts.zig (their overlay)  confirm.zig (End task dialog)
-  ui/         theme.zig (palette to colours) controls.zig (press, button, switch, segmented) dialog.zig (a dialog that keeps the keyboard) table.zig (sortable rows) app_icon.zig (an app's icon in a list) fonts.zig icon.zig charts.zig tile.zig  assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
+  ui/         theme.zig (palette to colours)  controls.zig (press, button, switch, segmented)  dialog.zig (a dialog that keeps the keyboard)
+              table.zig (sortable rows, columns that give way)  app_icon.zig (an app's icon in a list)  fonts.zig  icon.zig  charts.zig  tile.zig
+              assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
-  tests.zig   the views, rendered offscreen
+  tests.zig   the views, rendered offscreen, most against a fixed sample (`Fixture`)
 ```
 
 - **A feature is a folder with a `root.zig`.** `root.zig` is its public API and its test aggregator. The data side lives in `system/<feature>/`, the page in `src/pages/<feature>/`.
@@ -78,6 +83,7 @@ src/      the executable. The only place nanoui is imported.
 - **Settings.**
   - Kept in `$XDG_CONFIG_HOME/zmon/settings.toml`, written whole on every change (a new file renamed over the old). User themes come from `$XDG_DATA_HOME/zmon/themes/`, read again when Settings opens.
   - Tests pass no config location to `State.init`, so they never read or write the real files.
+  - A test that walks a list or checks an order feeds `State.useSample` a fixed sample (`Fixture` in `src/tests.zig`): the live machine re-sorts between key presses.
 - **Privacy.** Never log or persist process command lines or environments. A command line may be shown on screen, in the details pane only (the owner's decision), and is read for the selected process alone.
 
 ## Zig 0.17 idioms

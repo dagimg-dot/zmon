@@ -42,7 +42,7 @@ pub const Interfaces = struct {
     fn ask(name: []const u8) bool {
         var path: [128]u8 = undefined;
         const p = std.fmt.bufPrintSentinel(&path, "/sys/devices/virtual/net/{s}", .{name}, 0) catch return false;
-        return std.c.access(p.ptr, std.posix.F_OK) == 0;
+        return files.exists(p.ptr, false);
     }
 };
 

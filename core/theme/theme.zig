@@ -2,7 +2,7 @@
 //! derived from them, as vicinae derives its own (theme-file.cpp). A theme is
 //! resolved once, into a dense `Palette` indexed by `Token`, when it is loaded.
 const std = @import("std");
-const toml = @import("toml.zig");
+const toml = @import("../toml.zig");
 const Rgba = @import("color.zig").Rgba;
 
 /// Every colour zmon draws with.

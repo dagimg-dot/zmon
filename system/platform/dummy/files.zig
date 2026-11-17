@@ -17,3 +17,8 @@ pub fn link(io: std.Io, dir: std.Io.Dir, path: []const u8, buf: []u8) ?[]u8 {
     _ = .{ io, dir, path, buf };
     return null;
 }
+
+pub fn exists(path: [*:0]const u8, readable: bool) bool {
+    _ = .{ path, readable };
+    return false;
+}

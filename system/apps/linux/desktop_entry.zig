@@ -8,7 +8,6 @@ pub const DesktopEntry = struct {
     icon: []const u8 = "",
     wm_class: []const u8 = "",
     exec: []const u8 = "",
-    categories: []const u8 = "",
     no_display: bool = false,
     is_app: bool = true,
 
@@ -18,7 +17,6 @@ pub const DesktopEntry = struct {
         Icon,
         StartupWMClass,
         Exec,
-        Categories,
         NoDisplay,
         Hidden,
     };
@@ -72,7 +70,6 @@ pub const DesktopEntry = struct {
             .Icon => setIfEmpty(&entry.icon, val),
             .StartupWMClass => setIfEmpty(&entry.wm_class, val),
             .Exec => setIfEmpty(&entry.exec, val),
-            .Categories => setIfEmpty(&entry.categories, val),
             .NoDisplay, .Hidden => if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "1")) {
                 entry.no_display = true;
             },
@@ -148,7 +145,6 @@ test "DesktopEntry parses standard desktop file correctly" {
     try std.testing.expectEqualStrings("com.visualstudio.code", entry.icon);
     try std.testing.expectEqualStrings("Code", entry.wm_class);
     try std.testing.expectEqualStrings("code %F", entry.exec);
-    try std.testing.expectEqualStrings("Development;IDE;", entry.categories);
 }
 
 test "DesktopEntry handles NoDisplay and non-Application types" {

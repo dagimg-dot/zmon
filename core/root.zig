@@ -7,6 +7,7 @@ pub const text = @import("text.zig");
 pub const search = @import("search.zig");
 pub const focus = @import("focus.zig");
 pub const devices = @import("devices.zig");
+pub const toml = @import("toml.zig");
 pub const settings = @import("settings.zig");
 pub const themes = @import("theme/root.zig");
 
@@ -24,6 +25,7 @@ test {
     _ = search;
     _ = focus;
     _ = devices;
+    _ = toml;
     _ = settings;
     _ = themes;
 }

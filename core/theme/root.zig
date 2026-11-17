@@ -1,6 +1,6 @@
 //! Themes: their colours, the files they are written in, and the ones zmon ships.
 pub const color = @import("color.zig");
-pub const toml = @import("toml.zig");
+pub const toml = @import("../toml.zig");
 pub const theme = @import("theme.zig");
 pub const builtin = @import("builtin.zig");
 
