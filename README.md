@@ -10,6 +10,7 @@ Live CPU, memory, disk and network, drawn natively in Zig. No webview, no root, 
 <p>
 <img alt="Zig 0.17" src="https://img.shields.io/badge/zig-0.17-EA580C?style=flat-square&logo=zig&logoColor=white">
 <img alt="Linux" src="https://img.shields.io/badge/platform-linux-EA580C?style=flat-square&logo=linux&logoColor=white">
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-555?style=flat-square"></a>
 </p>
 
 <p>
@@ -105,3 +106,7 @@ History, startup items, a disk analyzer and a floating overlay are planned. zmon
 ## Credits
 
 Inspired by [Systo](https://github.com/MohammedIbrahim8887/systo), and the details pane by [witr](https://github.com/pranshuparmar/witr). Drawn with [nanoui](https://github.com/justrach/nanoui) (MIT), in [Lexend](https://github.com/googlefonts/lexend) (SIL Open Font License, in `src/ui/assets/fonts`). The launcher entry parser comes from gize. The ported themes come from [vicinae](https://github.com/vicinaehq/vicinae) (GPL-3.0), with palettes by their authors; [THEMES.md](THEMES.md) lists them.
+
+## License
+
+[MIT](LICENSE), for zmon's own code. The binary also carries nanoui (MIT) and the Lexend font (SIL Open Font License 1.1). The 32 themes ported from vicinae, in `core/theme/themes/`, keep vicinae's licence, GPL-3.0.
