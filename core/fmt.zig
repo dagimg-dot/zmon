@@ -26,6 +26,16 @@ pub fn rate(buf: []u8, bps: f32) []const u8 {
     return std.fmt.bufPrint(buf, "{s}/s", .{b}) catch "";
 }
 
+/// A rate where there is room for four characters, as top and btop write
+/// them: "0", "812B", "1.4K", "960K", "12M".
+pub fn rateShort(buf: []u8, bps: f32) []const u8 {
+    var tmp: [24]u8 = undefined;
+    const b = bytes(&tmp, @intFromFloat(@max(0, bps)));
+    if (std.mem.eql(u8, b, "0 B")) return "0";
+    const space = std.mem.indexOfScalar(u8, b, ' ') orelse return b;
+    return std.fmt.bufPrint(buf, "{s}{c}", .{ b[0..space], b[space + 1] }) catch "";
+}
+
 /// "3.2%", "0%": whole numbers from 10 up.
 pub fn percent(buf: []u8, v: f32) []const u8 {
     if (v < 0.05) return "0%";
@@ -52,6 +62,10 @@ test "bytes, rates, percents and durations" {
     try std.testing.expectEqualStrings("12 MB", bytes(&b, 12 * 1024 * 1024 + 5));
     try std.testing.expectEqualStrings("0 B/s", rate(&b, 0));
     try std.testing.expectEqualStrings("2.0 MB/s", rate(&b, 2 * 1024 * 1024));
+    try std.testing.expectEqualStrings("0", rateShort(&b, 0));
+    try std.testing.expectEqualStrings("812B", rateShort(&b, 812));
+    try std.testing.expectEqualStrings("1.5K", rateShort(&b, 1536));
+    try std.testing.expectEqualStrings("12M", rateShort(&b, 12 * 1024 * 1024));
     try std.testing.expectEqualStrings("0%", percent(&b, 0));
     try std.testing.expectEqualStrings("3.2%", percent(&b, 3.24));
     try std.testing.expectEqualStrings("47%", percent(&b, 47.2));

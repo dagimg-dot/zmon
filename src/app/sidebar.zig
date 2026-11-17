@@ -74,18 +74,26 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
 /// The narrow sidebar: the same pages and devices, icons and live values only.
 fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
     expandButton(c, s, k);
-    navCompact(c, s, k, .apps, "Apps", "square.grid.2x2", "");
-    navCompact(c, s, k, .processes, "Processes", "waveform.path.ecg", "");
+    navCompact(c, s, k, .apps, "Apps", "square.grid.2x2", "", "");
+    navCompact(c, s, k, .processes, "Processes", "waveform.path.ecg", "", "");
     section(c, k, "");
     const smp = s.sample;
+    const a = c.alloc();
     var b: [4][16]u8 = undefined;
-    navCompact(c, s, k, .cpu, "CPU", "cpu", fmt.own(c.alloc(), fmt.percent(&b[0], smp.cpu_pct)));
-    navCompact(c, s, k, .memory, "Memory", "memorychip", fmt.own(c.alloc(), fmt.percent(&b[1], smp.history.memory.at(smp.history.memory.len -| 1))));
-    navCompact(c, s, k, .disk, "Disk", "internaldrive", "");
-    navCompact(c, s, k, .network, "Network", "network", "");
-    if (smp.devices.battery.present) navCompact(c, s, k, .battery, "Battery", "", c.print("{d:.0}%", .{smp.devices.battery.percent}));
+    const cpu = fmt.own(a, fmt.percent(&b[0], smp.cpu_pct));
+    const mem = fmt.own(a, fmt.percent(&b[1], smp.history.memory.at(smp.history.memory.len -| 1)));
+    const disk = smp.disk_read_bps + smp.disk_write_bps;
+    const net = smp.net_in_bps + smp.net_out_bps;
+    navCompact(c, s, k, .cpu, "CPU", "cpu", cpu, cpu);
+    navCompact(c, s, k, .memory, "Memory", "memorychip", mem, mem);
+    navCompact(c, s, k, .disk, "Disk", "internaldrive", fmt.own(a, fmt.rateShort(&b[2], disk)), fmt.own(a, fmt.rate(&b[3], disk)));
+    navCompact(c, s, k, .network, "Network", "network", fmt.own(a, fmt.rateShort(&b[0], net)), fmt.own(a, fmt.rate(&b[1], net)));
+    if (smp.devices.battery.present) {
+        const bt = c.print("{d:.0}%", .{smp.devices.battery.percent});
+        navCompact(c, s, k, .battery, "Battery", "", bt, bt);
+    }
     ui.spacer(c);
-    navCompact(c, s, k, .settings, "Settings", "gearshape", "");
+    navCompact(c, s, k, .settings, "Settings", "gearshape", "", "");
 }
 
 /// The quiet sidebar icon beside the name that collapses the sidebar.
@@ -121,22 +129,25 @@ fn expandButton(c: *ui.Context, s: *State, k: theme.Colors) void {
     } else app_icon.draw(c, 22);
 }
 
-fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8, value: []const u8) void {
+/// One page as an icon over its live `value`; `said` is the value in full,
+/// for its tooltip and a screen reader, where `value` is shortened to fit.
+fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8, value: []const u8, said: []const u8) void {
     ui.key(c, label);
     const on = s.page == page;
+    const named = if (said.len > 0) c.print("{s}, {s}", .{ label, said }) else label;
     var row = ui.div(c).column().wFull().py(7).gap(2).itemsCenter().rounded(8).control();
-    row = if (pageShortcut(page)) |sc| shortcut.tooltip(c, row, k, label, sc) else row.tooltip(label, .{});
+    row = if (pageShortcut(page)) |sc| shortcut.tooltip(c, row, k, named, sc) else row.tooltip(named, .{});
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
     const id = c.interact(row.index, .{}).id;
     s.nav_ids.set(page, id);
-    if (controls.press(c, row, .{ .role = .tab, .label = if (value.len > 0) c.print("{s}, {s}", .{ label, value }) else label, .selected = on })) s.openFromSidebar(page, id);
+    if (controls.press(c, row, .{ .role = .tab, .label = named, .selected = on })) s.openFromSidebar(page, id);
     const ink = if (on) k.selected_text else k.text;
     if (page == .battery) {
         const bt = s.sample.devices.battery;
         tile.batteryIcon(c, k, bt.percent, bt.charging, ink, 20);
     } else ui.icon(c, icon, .{ .size = 15, .frame = 20, .color = ink });
-    if (value.len > 0) ui.text(c, value, .{ .size = 10.5, .weight = .semibold, .color = ink, .tabular = true });
+    if (value.len > 0) ui.text(c, value, .{ .size = 10.5, .weight = .semibold, .color = ink, .tabular = true, .truncate = .ellipsis });
 }
 
 fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8) void {

@@ -879,8 +879,15 @@ test "a narrow window keeps the sidebar's pages as icons, still named for the ke
     var els: std.ArrayList(ui.access.Element) = .empty;
     try ui.access.tree(&t.ctx, arena.allocator(), &els);
     var settings = false;
-    for (els.items) |e| settings = settings or (e.role == .tab and std.mem.eql(u8, e.label, "Settings"));
-    try std.testing.expect(settings);
+    var disk = false;
+    var network = false;
+    for (els.items) |e| {
+        settings = settings or (e.role == .tab and std.mem.eql(u8, e.label, "Settings"));
+        // Disk and Network carry their rates, in full for the screen reader.
+        disk = disk or (std.mem.startsWith(u8, e.label, "Disk, ") and std.mem.endsWith(u8, e.label, "/s"));
+        network = network or (std.mem.startsWith(u8, e.label, "Network, ") and std.mem.endsWith(u8, e.label, "/s"));
+    }
+    try std.testing.expect(settings and disk and network);
 }
 
 test "searching :port finds the process listening on it" {
