@@ -9,6 +9,7 @@ const theme = @import("../ui/theme.zig");
 const tile = @import("../ui/tile.zig");
 const stats = @import("../pages/devices/stats.zig");
 const controls = @import("../ui/controls.zig");
+const motion = @import("../ui/motion.zig");
 const app_icon = @import("../ui/icon.zig");
 
 const shortcut = @import("../ui/shortcut.zig");
@@ -38,13 +39,25 @@ pub fn compact(c: *const ui.Context, s: *const State) bool {
     return s.settings.sidebar_collapsed or c.size.w < compact_below;
 }
 
+/// The sidebar's width collapsed and expanded.
+pub const narrow_w = 76;
+pub const wide_w = 236;
+
+/// The width the sidebar is headed for; while it moves, `draw` eases to it.
 pub fn width(c: *const ui.Context, s: *const State) f32 {
-    return if (compact(c, s)) 76 else 236;
+    return if (compact(c, s)) narrow_w else wide_w;
 }
 
+/// The sidebar eases between its widths. Its content is the layout it is
+/// headed for, at that layout's own width, so the growing sidebar uncovers
+/// it and the shrinking one closes over it, and it fades in as it goes.
 pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     const narrow = compact(c, s);
-    const side = ui.div(c).column().w(width(c, s)).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
+    const w = motion.value(c, "sidebar", width(c, s), motion.panel);
+    const wide = motion.progress(w, narrow_w, wide_w);
+    const outer = ui.div(c).column().w(w).hFull().bg(k.panel).clip();
+    defer outer.end();
+    const side = ui.div(c).column().w(width(c, s)).hFull().px(10).py(10).gap(4).scrollY().opacity(if (narrow) 1 - wide else wide);
     defer side.end();
     if (narrow) return drawCompact(c, s, k);
     {

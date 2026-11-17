@@ -16,6 +16,7 @@ test {
     _ = @import("ui/table.zig");
     _ = @import("ui/shortcut.zig");
     _ = @import("ui/icon.zig");
+    _ = @import("ui/motion.zig");
 }
 
 fn tester(t: *ui.Tester, state: *app_state.State) !void {
@@ -1192,4 +1193,51 @@ test "a window too narrow for the full sidebar offers no way to expand it" {
     defer t.deinit();
     t.settle(0.3);
     try std.testing.expectError(error.NotFound, pressLabel(&t, "Expand sidebar"));
+}
+
+test "the sidebar and the details pane slide rather than jump, and Reduce motion makes them jump" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    state.page = .processes;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const ctrl_b: ui.Shortcut = .{ .key = 'b', .cmd = true };
+    const ctrl_i: ui.Shortcut = .{ .key = 'i', .cmd = true };
+
+    // The list's left edge follows the sidebar's width.
+    const wide = t.findText("Name").?.x;
+    _ = t.shortcut(ctrl_b);
+    t.advance(0.05);
+    const between = t.findText("Name").?.x;
+    t.settle(1);
+    const narrow = t.findText("Name").?.x;
+    try std.testing.expect(narrow < between and between < wide);
+    try std.testing.expectApproxEqAbs(@as(f32, 160), wide - narrow, 1);
+
+    // The pane comes in from the window's edge, and stays drawn while it leaves.
+    const message = "Select an app or a process to see its details.";
+    _ = t.shortcut(ctrl_i);
+    t.advance(0.05);
+    const coming = t.findText(message).?.x;
+    t.settle(1);
+    const shown = t.findText(message).?.x;
+    try std.testing.expect(shown < coming);
+    _ = t.shortcut(ctrl_i);
+    t.advance(0.05);
+    try std.testing.expect(t.hasText(message));
+    t.settle(1);
+    try std.testing.expect(!t.hasText(message));
+
+    // Under Reduce motion both are where they are going on the next frame.
+    state.settings.reduce_motion = true;
+    _ = t.shortcut(ctrl_i);
+    t.frame();
+    try std.testing.expectApproxEqAbs(shown, t.findText(message).?.x, 0.5);
+    _ = t.shortcut(ctrl_b);
+    t.frame();
+    try std.testing.expectApproxEqAbs(wide, t.findText("Name").?.x, 0.5);
 }

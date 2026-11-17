@@ -62,11 +62,15 @@ pub fn edge(c: *ui.Context, s: *State, k: theme.Colors, sidebar_w: f32) void {
     _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = if (it.hovered or dragging) k.accent else k.separator }, .none, null);
 }
 
-pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
+/// The pane, `open` of the way out (0 to 1): its content keeps its width
+/// while the pane slides, so it moves in from the window's edge whole.
+pub fn pane(c: *ui.Context, s: *State, k: theme.Colors, open: f32) void {
     ui.key(c, "details-pane");
     // A window made narrower since the last drag still leaves the list room.
     const sidebar_w = @import("sidebar.zig").width(c, s);
     const w = @min(@as(f32, @floatFromInt(s.settings.details_width)), maxWidth(c.size.w, sidebar_w));
+    const slot = ui.div(c).w(w * open).hFull().clip();
+    defer slot.end();
     const box = ui.div(c).column().w(w).hFull().bg(k.panel).scrollY();
     defer box.end();
     const col = ui.div(c).column().wFull().px(18).py(16).gap(14);

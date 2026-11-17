@@ -34,6 +34,7 @@ src/      the executable. The only place nanoui is imported.
               details.zig (the details pane)  keys.zig (shortcuts)  focus.zig (stepping in, Escape back)  shortcuts.zig (their overlay)  confirm.zig (End task dialog)
   ui/         theme.zig (palette to colours)  controls.zig (press, button, switch, segmented)  dialog.zig (a dialog that keeps the keyboard)
               table.zig (sortable rows, columns that give way)  app_icon.zig (an app's icon in a list)  fonts.zig  icon.zig  charts.zig  tile.zig
+              motion.zig (named transitions, eased values, panels that slide open and shut)
               assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen, most against a fixed sample (`Fixture`)
@@ -71,6 +72,7 @@ src/      the executable. The only place nanoui is imported.
   - The one privileged path (the owner's decision): "Show with administrator rights" on a port search runs `zmon --port-holders PORT` through pkexec, only when pressed. That mode reads which processes hold the port, prints their pids and exits (`main.zig`, `app/root_lookup.zig`). Nothing else may run as root, and it never signals anything.
 - **Look.**
   - One typeface: Lexend, bundled in `src/ui/assets/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
+  - Anything that moves goes through `ui/motion.zig`: a named transition (`motion.panel`, `motion.quick`), `motion.value` for a number that eases, `motion.reveal` for a panel that opens and closes. Its keys name the thing that moves, unique in the window. Reduce motion makes every value jump, so a test that checks where something ends up settles first (`t.settle`).
   - Every colour comes from the active theme, through `theme.Colors` (`src/ui/theme.zig`). No raw hex colours in a page or widget. Graphite Dark and Graphite Light are zmon's own themes and the defaults; keep them monochrome, where emphasis is weight and contrast, not hue.
   - A theme is a vicinae-format `.toml` in `core/theme/themes/`, listed in `builtin.zig`. It names few colours and the rest are derived when it loads (`core/theme/theme.zig`), so a page asks for a role (panel, muted, selection), never a theme's own key. A new built-in must pass the contrast tests in `builtin.zig` and gets a line in `THEMES.md`.
   - Use zmon's own controls (`ui/controls.zig`, `ui/dialog.zig`), not nanoui's toggle, segmented control, `kit.button` or `kit.dialog`, which take fixed colours from nanoui's theme and can't take the keyboard's focus.

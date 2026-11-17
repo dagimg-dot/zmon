@@ -13,6 +13,7 @@ const focus = @import("focus.zig");
 const shortcuts = @import("shortcuts.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
+const motion = @import("../ui/motion.zig");
 const settings_page = @import("../pages/settings/root.zig");
 
 const State = state.State;
@@ -58,10 +59,13 @@ pub fn view(s: *State, c: *ui.Context) void {
                 .settings => settings_page.page(c, s, k),
             }
         }
-        if (s.details_open and s.onList()) {
-            details.edge(c, s, k, sidebar.width(c, s));
-            details.pane(c, s, k);
-        }
+        // The pane slides in and out; a page without one hides it at once.
+        if (s.onList()) {
+            if (motion.reveal(c, "details", s.details_open)) |open| {
+                details.edge(c, s, k, sidebar.width(c, s));
+                details.pane(c, s, k, open);
+            }
+        } else motion.jump(c, "details", if (s.details_open) 1 else 0);
         if (s.focus_content) {
             s.focus_content = false;
             focusContent(c, s, sidebar_stops);
