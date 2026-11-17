@@ -60,7 +60,7 @@ fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
     navCompact(c, s, k, .memory, "Memory", "memorychip", fmt.own(c.alloc(), fmt.percent(&b[1], smp.history.memory.at(smp.history.memory.len -| 1))));
     navCompact(c, s, k, .disk, "Disk", "internaldrive", "");
     navCompact(c, s, k, .network, "Network", "network", "");
-    if (smp.devices.battery.present) navCompact(c, s, k, .battery, "Battery", "gauge.with.dots.needle.33percent", c.print("{d:.0}%", .{smp.devices.battery.percent}));
+    if (smp.devices.battery.present) navCompact(c, s, k, .battery, "Battery", "", c.print("{d:.0}%", .{smp.devices.battery.percent}));
     ui.spacer(c);
     navCompact(c, s, k, .settings, "Settings", "gearshape", "");
 }
@@ -75,7 +75,10 @@ fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []c
     s.nav_ids.set(page, id);
     if (controls.press(c, row, .{ .role = .tab, .label = if (value.len > 0) c.print("{s}, {s}", .{ label, value }) else label, .selected = on })) s.openFromSidebar(page, id);
     const ink = if (on) k.selected_text else k.text;
-    ui.icon(c, icon, .{ .size = 15, .frame = 20, .color = ink });
+    if (page == .battery) {
+        const bt = s.sample.devices.battery;
+        tile.batteryIcon(c, k, bt.percent, bt.charging, ink, 20);
+    } else ui.icon(c, icon, .{ .size = 15, .frame = 20, .color = ink });
     if (value.len > 0) ui.text(c, value, .{ .size = 10.5, .weight = .semibold, .color = ink, .tabular = true });
 }
 
@@ -164,7 +167,8 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
             .key = "tile-battery",
             .color = k.success,
             .window = s.settings.span.seconds(),
-            .icon = "gauge.with.dots.needle.33percent", // nanoui has no battery icon
+            .icon = "",
+            .battery = .{ .percent = bt.percent, .charging = bt.charging },
             .title = "Battery",
             .value = c.print("{d:.0}%", .{bt.percent}),
             .detail = if (bt.seconds_left > 0) c.print("{s} · {s}", .{ stats.statusWord(bt), fmt.duration(&b[0], bt.seconds_left) }) else stats.statusWord(bt),
