@@ -9,6 +9,7 @@ const app = @import("../app/state.zig");
 const theme = @import("../ui/theme.zig");
 const table = @import("../ui/table.zig");
 const controls = @import("../ui/controls.zig");
+const shortcut = @import("../ui/shortcut.zig");
 
 const State = app.State;
 
@@ -28,8 +29,8 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors, title: []const u8, count
         defer box.end();
         ui.text(c, count, .{ .size = 12.5, .color = k.secondary });
     }
-    if (controls.searchSized(c, &s.search, if (narrow) 150 else 220)) s.rebuild();
-    if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P", .compact = narrow })) s.togglePause();
-    if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I", .compact = narrow })) s.details_open = !s.details_open;
-    if (controls.button(c, k, "End task", .{ .icon = if (narrow) "xmark.octagon" else "", .disabled = s.target() == null, .hint = "Delete", .compact = narrow })) s.askEndTask(false);
+    if (controls.searchSized(c, &s.search, if (narrow) 150 else 220, k)) s.rebuild();
+    if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P", .compact = narrow, .shortcut = shortcut.pause })) s.togglePause();
+    if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I", .compact = narrow, .shortcut = shortcut.details })) s.details_open = !s.details_open;
+    if (controls.button(c, k, "End task", .{ .icon = if (narrow) "xmark.octagon" else "", .disabled = s.target() == null, .hint = "Delete", .compact = narrow, .shortcut = shortcut.end_task })) s.askEndTask(false);
 }

@@ -11,7 +11,23 @@ const stats = @import("../pages/devices/stats.zig");
 const controls = @import("../ui/controls.zig");
 const app_icon = @import("../ui/icon.zig");
 
+const shortcut = @import("../ui/shortcut.zig");
+
 const State = state.State;
+
+/// The shortcut that opens a page, shown when its entry is hovered.
+fn pageShortcut(page: Page) ?shortcut.Shortcut {
+    return switch (page) {
+        .apps => shortcut.apps,
+        .processes => shortcut.processes,
+        .cpu => shortcut.cpu,
+        .memory => shortcut.memory,
+        .disk => shortcut.disk,
+        .network => shortcut.network,
+        .settings => shortcut.settings,
+        .battery => null,
+    };
+}
 const Page = state.Page;
 
 /// Below this window width the sidebar keeps only its icons and values.
@@ -68,7 +84,8 @@ fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
 fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8, value: []const u8) void {
     ui.key(c, label);
     const on = s.page == page;
-    const row = ui.div(c).column().wFull().py(7).gap(2).itemsCenter().rounded(8).control().tooltip(label, .{});
+    var row = ui.div(c).column().wFull().py(7).gap(2).itemsCenter().rounded(8).control();
+    row = if (pageShortcut(page)) |sc| shortcut.tooltip(c, row, k, label, sc) else row.tooltip(label, .{});
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
     const id = c.interact(row.index, .{}).id;
@@ -85,7 +102,8 @@ fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []c
 fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8) void {
     ui.key(c, label);
     const on = s.page == page;
-    const row = ui.div(c).row().wFull().h(34).px(10).itemsCenter().gap(10).rounded(8).control();
+    var row = ui.div(c).row().wFull().h(34).px(10).itemsCenter().gap(10).rounded(8).control();
+    if (pageShortcut(page)) |sc| row = shortcut.tooltip(c, row, k, label, sc);
     defer row.end();
     if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
     const id = c.interact(row.index, .{}).id;
@@ -156,7 +174,9 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         } },
     };
     for (tiles) |it| {
-        const t = tile.draw(c, k, it.t, s.page == it.page);
+        var with_keys = it.t;
+        with_keys.shortcut = pageShortcut(it.page);
+        const t = tile.draw(c, k, with_keys, s.page == it.page);
         if (t.pressed) s.openFromSidebar(it.page, t.id);
         s.nav_ids.set(it.page, t.id);
     }

@@ -5,41 +5,37 @@ const ui = nanoui.ui;
 const app = @import("state.zig");
 const theme = @import("../ui/theme.zig");
 const dialog = @import("../ui/dialog.zig");
+const shortcut = @import("../ui/shortcut.zig");
 
-const Item = struct { keys: []const []const u8, what: []const u8 };
+const Item = shortcut.Shortcut;
 const Group = struct { title: []const u8, items: []const Item };
 
 /// Every shortcut zmon has; `keys.zig` handles them and README lists them.
+/// The ones a control has come from `ui/shortcut.zig`, as its tooltip shows them.
 pub const groups = [_]Group{
-    .{ .title = "General", .items = &.{
-        .{ .keys = &.{ "Ctrl", "F" }, .what = "Search apps and processes" },
-        .{ .keys = &.{ "Ctrl", "," }, .what = "Settings" },
-        .{ .keys = &.{ "Ctrl", "?" }, .what = "Keyboard shortcuts" },
-        .{ .keys = &.{ "Ctrl", "Shift", "P" }, .what = "Pause or resume updates" },
-        .{ .keys = &.{ "Ctrl", "Q" }, .what = "Quit" },
-    } },
+    .{ .title = "General", .items = &.{ shortcut.search, shortcut.settings, shortcut.help, shortcut.pause, shortcut.quit } },
     .{ .title = "Pages", .items = &.{
-        .{ .keys = &.{ "Ctrl", "1" }, .what = "Apps" },
-        .{ .keys = &.{ "Ctrl", "2" }, .what = "Processes" },
-        .{ .keys = &.{ "Ctrl", "3 to 6" }, .what = "CPU, Memory, Disk, Network" },
-        .{ .keys = &.{ "Ctrl", "Page Down" }, .what = "Next page" },
-        .{ .keys = &.{ "Ctrl", "Page Up" }, .what = "Previous page" },
+        shortcut.apps,
+        shortcut.processes,
+        .{ .what = "CPU, Memory, Disk, Network", .keys = &.{ "Ctrl", "3 to 6" } },
+        shortcut.next_page,
+        shortcut.previous_page,
     } },
     .{ .title = "Lists", .items = &.{
-        .{ .keys = &.{ "↑", "↓" }, .what = "Select the row above or below" },
-        .{ .keys = &.{ "Home", "End" }, .what = "First or last row" },
-        .{ .keys = &.{"→"}, .what = "Show an app's processes" },
-        .{ .keys = &.{"←"}, .what = "Hide them, or go back to the app" },
-        .{ .keys = &.{ "Ctrl", "I" }, .what = "Show or hide the details" },
-        .{ .keys = &.{"Delete"}, .what = "End task (Return confirms)" },
-        .{ .keys = &.{ "Shift", "Delete" }, .what = "Force quit" },
-        .{ .keys = &.{"Esc"}, .what = "Go back where you came from" },
-        .{ .keys = &.{"Type"}, .what = "Start a search" },
+        .{ .what = "Select the row above or below", .keys = &.{ "↑", "↓" } },
+        .{ .what = "First or last row", .keys = &.{ "Home", "End" } },
+        .{ .what = "Show an app's processes", .keys = &.{"→"} },
+        .{ .what = "Hide them, or go back to the app", .keys = &.{"←"} },
+        shortcut.details,
+        shortcut.end_task,
+        shortcut.force_quit,
+        .{ .what = "Go back where you came from", .keys = &.{"Esc"} },
+        .{ .what = "Start a search", .keys = &.{"Type"} },
     } },
     .{ .title = "Everywhere", .items = &.{
-        .{ .keys = &.{ "Tab", "Shift Tab" }, .what = "Move between controls" },
-        .{ .keys = &.{"Return"}, .what = "Open a page and go into it" },
-        .{ .keys = &.{"Space"}, .what = "Press the focused control" },
+        .{ .what = "Move between controls", .keys = &.{"Tab"}, .alt = &.{ "Shift", "Tab" } },
+        .{ .what = "Open a page and go into it", .keys = &.{"Return"} },
+        .{ .what = "Press the focused control", .keys = &.{"Space"} },
     } },
 };
 
@@ -72,13 +68,6 @@ fn group(c: *ui.Context, k: theme.Colors, g: Group) void {
         defer r.end();
         ui.text(c, it.what, .{ .size = 13, .color = k.text });
         ui.spacer(c);
-        for (it.keys) |cap| keycap(c, k, cap);
+        shortcut.keycaps(c, k, it, false);
     }
-}
-
-fn keycap(c: *ui.Context, k: theme.Colors, label: []const u8) void {
-    ui.key(c, label);
-    const d = ui.div(c).row().h(22).px(7).itemsCenter().rounded(5).bg(k.stripe).border(k.border);
-    defer d.end();
-    ui.text(c, label, .{ .size = 11.5, .weight = .medium, .color = k.text });
 }

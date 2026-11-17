@@ -5,6 +5,7 @@
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const theme = @import("theme.zig");
+const shortcut_mod = @import("shortcut.zig");
 
 /// Makes `d` a control: Tab stops on it, Space or Return presses it, and a
 /// screen reader reads it as `desc`. True when it was pressed this frame.
@@ -17,13 +18,16 @@ pub fn press(c: *ui.Context, d: ui.Div, desc: ui.access.Describe) bool {
 
 /// The search field Apps and Processes share; true when its text changed.
 /// Placeholder and width are the same on both, so they read as one search.
-pub fn search(c: *ui.Context, buf: *ui.TextBuffer) bool {
-    return searchSized(c, buf, 220);
+pub fn search(c: *ui.Context, buf: *ui.TextBuffer, k: theme.Colors) bool {
+    return searchSized(c, buf, 220, k);
 }
 
-/// The same field, narrower when the toolbar is short of room.
-pub fn searchSized(c: *ui.Context, buf: *ui.TextBuffer, width: f32) bool {
+/// The same field, narrower when the toolbar is short of room. Hovering it
+/// shows Ctrl+F.
+pub fn searchSized(c: *ui.Context, buf: *ui.TextBuffer, width: f32, k: theme.Colors) bool {
     ui.key(c, "search");
+    const box = shortcut_mod.tooltip(c, ui.div(c).row(), k, "Search", shortcut_mod.search);
+    defer box.end();
     return ui.textField(c, buf, .{ .placeholder = "Search", .width = .{ .px = width }, .size = 13 }).changed;
 }
 
@@ -37,6 +41,8 @@ pub const ButtonOptions = struct {
     /// Only the icon shows; the label is its tooltip and its name for a
     /// screen reader.
     compact: bool = false,
+    /// Its keyboard shortcut: hovering shows it, beside the label.
+    shortcut: ?shortcut_mod.Shortcut = null,
 };
 
 /// An outlined button; true when it was pressed.
@@ -44,7 +50,9 @@ pub fn button(c: *ui.Context, k: theme.Colors, label: []const u8, opts: ButtonOp
     ui.key(c, label);
     const compact = opts.compact and opts.icon.len > 0;
     var b = ui.div(c).row().h(30).px(if (compact) 9 else 12).gap(6).itemsCenter().rounded(8).border(if (opts.danger and !opts.disabled) k.danger else k.border).control();
-    if (compact) b = b.tooltip(label, .{});
+    if (opts.shortcut) |s| {
+        b = shortcut_mod.tooltip(c, b, k, label, s);
+    } else if (compact) b = b.tooltip(label, .{});
     defer b.end();
     const ink = if (opts.disabled) k.tertiary else if (opts.danger) k.danger else k.text;
     if (opts.disabled) {

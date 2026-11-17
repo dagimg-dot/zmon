@@ -142,7 +142,7 @@ fn accessibility(c: *ui.Context, s: *State, k: theme.Colors) void {
     {
         const r = row.begin(c, k, "keys", "Keyboard shortcuts", "Every page, list and action has one. Ctrl+? shows them anywhere.", false);
         defer r.end();
-        if (controls.button(c, k, "Show", .{})) s.shortcuts_open = true;
+        if (controls.button(c, k, "Show", .{ .shortcut = @import("../../ui/shortcut.zig").help })) s.shortcuts_open = true;
     }
 }
 

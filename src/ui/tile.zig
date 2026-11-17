@@ -6,6 +6,7 @@ const core = @import("zmon-core");
 const charts = @import("charts.zig");
 const theme = @import("theme.zig");
 const controls = @import("controls.zig");
+const shortcut_mod = @import("shortcut.zig");
 
 pub const Tile = struct {
     key: []const u8,
@@ -19,6 +20,8 @@ pub const Tile = struct {
     /// The top of the chart; null scales to the history, never below `floor`.
     max: ?f32 = null,
     floor: f32 = 1,
+    /// The shortcut that opens its page, shown when it is hovered.
+    shortcut: ?shortcut_mod.Shortcut = null,
     /// A battery's charge (0 to 100) and whether it is charging: drawn as a
     /// battery in place of `icon`, which nanoui doesn't have.
     battery: ?struct { percent: f32, charging: bool } = null,
@@ -48,7 +51,8 @@ pub fn batteryIcon(c: *ui.Context, k: theme.Colors, percent: f32, charging: bool
 /// Draws the tile; says whether it was pressed, and its box's id (for focus).
 pub fn draw(c: *ui.Context, k: theme.Colors, t: Tile, on: bool) struct { pressed: bool, id: u64 } {
     ui.key(c, t.key);
-    const box = ui.div(c).column().wFull().px(10).py(8).gap(3).rounded(10).control();
+    var box = ui.div(c).column().wFull().px(10).py(8).gap(3).rounded(10).control();
+    if (t.shortcut) |s| box = shortcut_mod.tooltip(c, box, k, t.title, s);
     defer box.end();
     if (on) _ = box.bg(k.page).border(k.separator) else _ = box.hover(k.hover);
     const clicked = controls.press(c, box, .{ .role = .tab, .label = c.print("{s}, {s}, {s}", .{ t.title, t.value, t.detail }), .selected = on });

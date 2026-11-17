@@ -14,6 +14,7 @@ test {
     _ = @import("app/details.zig");
     _ = @import("app/root_lookup.zig");
     _ = @import("ui/table.zig");
+    _ = @import("ui/shortcut.zig");
     _ = @import("ui/icon.zig");
 }
 
@@ -1062,4 +1063,25 @@ test "dragging the details pane's edge resizes it, within limits, and a double-c
     t.doubleClick(1180 - 260 - 4, 400);
     t.settle(0.1);
     try std.testing.expectEqual(@as(u16, 320), state.settings.details_width);
+}
+
+test "hovering a control with a shortcut shows what it does and its keys" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(!t.hasText("Ctrl")); // no keycaps until something is hovered
+    try t.hoverText("Processes"); // the sidebar's entry
+    t.advance(0.6);
+    try std.testing.expect(t.tooltipRect() != null);
+    try std.testing.expect(t.hasText("Ctrl"));
+    try std.testing.expect(t.hasText("2"));
+    try t.hoverText("Pause"); // a toolbar button
+    t.advance(0.6);
+    try std.testing.expect(t.hasText("Shift"));
+    try std.testing.expect(t.hasText("P"));
 }
