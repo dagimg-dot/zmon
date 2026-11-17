@@ -49,8 +49,10 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     }
     var rows = table.list(c, s.proc_rows.len, s.reveal);
     s.reveal = null;
+    s.beginList();
     while (rows.next()) |i| procRow(c, s, k, &columns, s.proc_rows[i], i);
     rows.end();
+    s.endList();
 }
 
 /// What a ":port" search found when no row shows: nothing yet, nothing at

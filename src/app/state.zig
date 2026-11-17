@@ -121,6 +121,10 @@ pub const State = struct {
     /// A group opened or closed while the list was being drawn: the rows are
     /// rebuilt only after the list is done with them.
     pending_toggle: ?i32 = null,
+    /// A list is being drawn from `app_rows` or `proc_rows`: a rebuild now
+    /// would free the rows under it, so it waits for `endList`.
+    drawing_list: bool = false,
+    rebuild_due: bool = false,
     confirm: bool = false,
     /// A dialog was open when the last frame ended, so its closing can be seen.
     dialog_was_open: bool = false,
@@ -311,6 +315,11 @@ pub const State = struct {
 
     /// Regroups the sample and lays out both lists.
     pub fn rebuild(s: *State) void {
+        if (s.drawing_list) {
+            s.rebuild_due = true;
+            return;
+        }
+        s.rebuild_due = false;
         _ = s.built.reset(.retain_capacity);
         const a = s.built.allocator();
         const procs = s.sample.procs;
@@ -345,6 +354,18 @@ pub const State = struct {
         for (gone[0..n_gone]) |root| _ = s.expanded.remove(root);
         s.app_rows = appRows(s, a) catch &.{};
         s.proc_rows = procRows(s, a) catch &.{};
+    }
+
+    /// The pages call these around drawing a list: a click inside it that
+    /// changes the lists (closing Background, opening an app) takes effect
+    /// once the rows are no longer being read.
+    pub fn beginList(s: *State) void {
+        s.drawing_list = true;
+    }
+
+    pub fn endList(s: *State) void {
+        s.drawing_list = false;
+        if (s.rebuild_due) s.rebuild();
     }
 
     /// The group a process belongs to, if any.

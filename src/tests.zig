@@ -926,3 +926,21 @@ test "the details say why a process runs: its parents, its service, and a warnin
     t.settle(0.3);
     try std.testing.expect(t.hasText("Runs as root: it can change anything on this machine."));
 }
+
+test "closing Background from its heading doesn't pull the rows out from under the list" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try t.clickText("Background");
+    t.settle(0.2);
+    try std.testing.expect(state.background_open);
+    try std.testing.expect(t.hasText("daemon")); // rows after the heading are drawn
+    try t.clickText("Background"); // closing: the list shrinks while it is being drawn
+    t.settle(0.2);
+    try std.testing.expect(!state.background_open);
+}

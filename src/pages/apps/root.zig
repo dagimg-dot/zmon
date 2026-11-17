@@ -40,12 +40,14 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     }
     var rows = table.list(c, s.app_rows.len, s.reveal);
     s.reveal = null;
+    s.beginList();
     while (rows.next()) |i| switch (s.app_rows[i]) {
         .group => |g| groupRow(c, s, k, &columns, s.groups[g], i),
         .proc => |p| procRow(c, s, k, &columns, s.sample.procs[p], i),
         .background => |n| backgroundRow(c, s, k, n, i),
     };
     rows.end();
+    s.endList();
     if (s.pending_toggle) |root| {
         s.pending_toggle = null;
         s.toggle(root);
