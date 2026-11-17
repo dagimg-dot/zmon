@@ -3,9 +3,10 @@ const std = @import("std");
 const files = @import("../../platform/root.zig").files;
 
 /// Bytes received and sent since boot by the machine's real network interfaces.
-pub fn read(io: std.Io, interfaces: *Interfaces) [2]u64 {
+/// Null when the counters can't be read.
+pub fn read(io: std.Io, interfaces: *Interfaces) ?[2]u64 {
     var buf: [65536]u8 = undefined;
-    const text = files.readWhole(io, .cwd(), "/proc/net/dev", &buf) catch return .{ 0, 0 };
+    const text = files.readWhole(io, .cwd(), "/proc/net/dev", &buf) catch return null;
     return parseNetDev(text, interfaces);
 }
 

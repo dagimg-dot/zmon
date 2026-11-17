@@ -230,7 +230,8 @@ pub const Sampler = struct {
     }
 
     fn collectDisk(s: *Sampler, dt: f64, first: bool) void {
-        const now_disk = backend.disk.read(s.io);
+        // A failed read leaves the last counters: the next good one measures from them.
+        const now_disk = backend.disk.read(s.io) orelse return;
         if (!first) {
             s.disk_read_bps = rate(now_disk[0], s.prev_disk[0], dt);
             s.disk_write_bps = rate(now_disk[1], s.prev_disk[1], dt);
@@ -239,7 +240,7 @@ pub const Sampler = struct {
     }
 
     fn collectNet(s: *Sampler, dt: f64, first: bool) void {
-        const now_net = backend.network.read(s.io, &s.interfaces);
+        const now_net = backend.network.read(s.io, &s.interfaces) orelse return;
         if (!first) {
             s.net_in_bps = rate(now_net[0], s.prev_net[0], dt);
             s.net_out_bps = rate(now_net[1], s.prev_net[1], dt);

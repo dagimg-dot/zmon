@@ -2,10 +2,11 @@
 const std = @import("std");
 const files = @import("../../platform/root.zig").files;
 
-/// Bytes read and written since boot, by every whole disk.
-pub fn read(io: std.Io) [2]u64 {
+/// Bytes read and written since boot, by every whole disk; null when the
+/// counters can't be read (a zero would read as everything since boot at once).
+pub fn read(io: std.Io) ?[2]u64 {
     var buf: [65536]u8 = undefined;
-    const text = files.readWhole(io, .cwd(), "/proc/diskstats", &buf) catch return .{ 0, 0 };
+    const text = files.readWhole(io, .cwd(), "/proc/diskstats", &buf) catch return null;
     return parseDiskstats(text);
 }
 
@@ -13,8 +14,11 @@ pub fn read(io: std.Io) [2]u64 {
 /// mmcblk0, but not sda1, nvme0n1p1, loop0, dm-0, zram0.
 pub fn wholeDisk(name: []const u8) bool {
     if (name.len < 3) return false;
-    if (std.mem.startsWith(u8, name, "nvme") or std.mem.startsWith(u8, name, "mmcblk"))
+    if (std.mem.startsWith(u8, name, "nvme") or std.mem.startsWith(u8, name, "mmcblk")) {
+        // An eMMC's boot and replay-protected areas aren't disks of their own.
+        if (std.mem.indexOf(u8, name, "boot") != null or std.mem.indexOf(u8, name, "rpmb") != null) return false;
         return std.mem.indexOfScalar(u8, name, 'p') == null;
+    }
     for ([_][]const u8{ "sd", "vd", "hd", "xvd" }) |pre| {
         if (!std.mem.startsWith(u8, name, pre)) continue;
         for (name[pre.len..]) |ch| if (!std.ascii.isAlphabetic(ch)) return false;
@@ -50,6 +54,8 @@ test "disks: whole devices only" {
     try std.testing.expect(!wholeDisk("sda1"));
     try std.testing.expect(!wholeDisk("loop3"));
     try std.testing.expect(!wholeDisk("dm-0"));
+    try std.testing.expect(!wholeDisk("mmcblk0boot0")); // an eMMC's boot area
+    try std.testing.expect(!wholeDisk("mmcblk0rpmb"));
     const text = "   8  0 sda 10 0 2000 5 20 0 4000 9 0 0 0\n   8  1 sda1 5 0 1000 2 10 0 2000 4 0 0 0\n";
     const d = parseDiskstats(text);
     try std.testing.expectEqual(@as(u64, 2000 * 512), d[0]);

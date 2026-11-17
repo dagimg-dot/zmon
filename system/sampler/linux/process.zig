@@ -94,13 +94,19 @@ pub fn selfPid() i32 {
 /// Sends `sig` to `pid` only if it is still the process that started at
 /// `start`: a pid freed since the sample may already belong to another process.
 pub fn signal(io: std.Io, pid: i32, start: u64, sig: Signal) bool {
+    const linux = std.os.linux;
+    // A pidfd names the process itself, not its number: once it is open, the
+    // pid being freed and reused can't redirect the signal.
+    const rc = linux.pidfd_open(pid, 0);
+    if (linux.errno(rc) != .SUCCESS) return false;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
     var buf: [1024]u8 = undefined;
     var path: [32]u8 = undefined;
     const text = files.read(io, .cwd(), std.fmt.bufPrint(&path, "/proc/{d}/stat", .{pid}) catch return false, &buf) catch return false;
     const st = parseStat(text) orelse return false;
     if (st.start != start) return false;
-    const linux = std.os.linux;
-    return linux.errno(linux.kill(pid, if (sig == .kill) .KILL else .TERM)) == .SUCCESS;
+    return linux.errno(linux.pidfd_send_signal(fd, if (sig == .kill) .KILL else .TERM, null, 0)) == .SUCCESS;
 }
 
 /// What doesn't change while a process runs one program: who owns it and which

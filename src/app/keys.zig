@@ -16,8 +16,12 @@ const Key = @typeInfo(@FieldType(@FieldType(ui.Context, "input"), "key")).option
 
 /// The pages Ctrl+1 to Ctrl+6 open, in the sidebar's order.
 const numbered = [_]Page{ .apps, .processes, .cpu, .memory, .disk, .network };
-/// Rows Page Up and Page Down move.
-const page_rows = 15;
+/// Rows Page Up and Page Down move: as many as the list shows, less one so
+/// a row stays in view across the jump.
+fn pageRows(c: *ui.Context, s: *const State) isize {
+    const h = if (c.rects.get(s.list_id)) |r| r.h else 450;
+    return @max(1, @as(isize, @intFromFloat(h / 30)) - 1);
+}
 
 pub fn handle(c: *ui.Context, s: *State) void {
     // Focus a click left behind (on the sidebar, say) isn't the keyboard's:
@@ -86,11 +90,11 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool, in_search: bool) void {
         moved = true;
     }
     if (plain(c, .page_down)) {
-        s.moveSelection(page_rows);
+        s.moveSelection(pageRows(c, s));
         moved = true;
     }
     if (plain(c, .page_up)) {
-        s.moveSelection(-page_rows);
+        s.moveSelection(-pageRows(c, s));
         moved = true;
     }
     if (moved) s.list_key_time = c.time;

@@ -175,7 +175,7 @@ fn about(c: *ui.Context, s: *State, k: theme.Colors) void {
         defer words.end();
         ui.text(c, "zmon", .{ .size = 17, .weight = .bold, .color = k.text });
         ui.text(c, "A system monitor for Linux, in Zig", .{ .size = 12.5, .color = k.secondary });
-        ui.text(c, "Version 0.0.1", .{ .size = 12, .color = k.tertiary });
+        ui.text(c, "Version " ++ @import("about").version, .{ .size = 12, .color = k.tertiary });
     }
     const rows = [_]struct { key: []const u8, label: []const u8, value: []const u8 }{
         .{ .key = "machine", .label = "This machine", .value = if (s.sample.machine().len > 0) s.sample.machine() else "Unknown" },

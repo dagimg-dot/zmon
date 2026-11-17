@@ -327,6 +327,20 @@ pub const State = struct {
                 s.owner[m] = @intCast(gi);
             };
         }
+        // An app that has ended is forgotten, so a new one under its pid starts closed.
+        var it = s.expanded.keyIterator();
+        var gone: [32]i32 = undefined;
+        var n_gone: usize = 0;
+        while (it.next()) |root| {
+            const alive = for (s.groups) |g| {
+                if (g.root == root.*) break true;
+            } else false;
+            if (!alive and n_gone < gone.len) {
+                gone[n_gone] = root.*;
+                n_gone += 1;
+            }
+        }
+        for (gone[0..n_gone]) |root| _ = s.expanded.remove(root);
         s.app_rows = appRows(s, a) catch &.{};
         s.proc_rows = procRows(s, a) catch &.{};
     }
@@ -358,8 +372,10 @@ pub const State = struct {
         fn less(c: GroupOrder, x: apps.Group, y: apps.Group) bool {
             if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
             if (c.o.key == .name) {
+                // Equal names keep one order, by the pid they hang from.
+                if (std.ascii.eqlIgnoreCase(x.name, y.name)) return x.root < y.root;
                 const lt = std.ascii.lessThanIgnoreCase(x.name, y.name);
-                return if (c.o.ascending) lt else !lt and !std.ascii.eqlIgnoreCase(x.name, y.name);
+                return if (c.o.ascending) lt else !lt;
             }
             const kx = c.key(x);
             const ky = c.key(y);

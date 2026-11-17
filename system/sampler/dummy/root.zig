@@ -59,17 +59,17 @@ pub const memory = struct {
 };
 
 pub const disk = struct {
-    pub fn read(io: std.Io) [2]u64 {
+    pub fn read(io: std.Io) ?[2]u64 {
         _ = io;
-        return .{ 0, 0 };
+        return null;
     }
 };
 
 pub const network = struct {
     pub const Interfaces = struct {};
-    pub fn read(io: std.Io, interfaces: *Interfaces) [2]u64 {
+    pub fn read(io: std.Io, interfaces: *Interfaces) ?[2]u64 {
         _ = .{ io, interfaces };
-        return .{ 0, 0 };
+        return null;
     }
 };
 

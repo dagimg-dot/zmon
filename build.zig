@@ -19,17 +19,21 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .imports = &.{.{ .name = "zmon-core", .module = core }},
     });
-    const imports: []const std.Build.Module.Import = &.{
+
+    // What the app says of itself, from build.zig.zon.
+    const about = b.addOptions();
+    about.addOption([]const u8, "version", @import("build.zig.zon").version);
+    const app_imports: []const std.Build.Module.Import = &.{
         .{ .name = "nanoui", .module = nanoui },
         .{ .name = "zmon-core", .module = core },
         .{ .name = "zmon-system", .module = system },
+        .{ .name = "about", .module = about.createModule() },
     };
-
     const exe = b.addExecutable(.{ .name = "zmon", .root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = imports,
+        .imports = app_imports,
     }) });
     // A window of its own on Windows, without a console window beside it.
     if (target.result.os.tag == .windows) exe.subsystem = .windows;
@@ -55,7 +59,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = imports,
+        .imports = app_imports,
     }) });
     const run_core = b.addRunArtifact(test_core);
     const run_system = b.addRunArtifact(test_system);
