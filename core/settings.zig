@@ -86,6 +86,8 @@ pub const Settings = struct {
     cpu_scale: CpuScale = .machine,
     /// The details pane's width in points, as last dragged.
     details_width: u16 = 320,
+    /// The sidebar shows only its icons and values, at any window width.
+    sidebar_collapsed: bool = false,
     text_size: TextSize = .default,
     /// Stronger secondary text and lines than the theme draws.
     more_contrast: bool = false,
@@ -107,6 +109,7 @@ pub const Settings = struct {
         s.confirm_end_task = boolean(entries, "processes.confirm_end_task") orelse s.confirm_end_task;
         if (toml.getString(entries, "processes.cpu_scale")) |v| s.cpu_scale = std.meta.stringToEnum(CpuScale, v) orelse s.cpu_scale;
         if (number(entries, "processes.details_width")) |n| s.details_width = std.math.clamp(n, 200, 1200);
+        s.sidebar_collapsed = boolean(entries, "sidebar.collapsed") orelse s.sidebar_collapsed;
         if (toml.getString(entries, "accessibility.text_size")) |v| s.text_size = std.meta.stringToEnum(TextSize, v) orelse s.text_size;
         s.more_contrast = boolean(entries, "accessibility.more_contrast") orelse s.more_contrast;
         s.reduce_motion = boolean(entries, "accessibility.reduce_motion") orelse s.reduce_motion;
@@ -134,6 +137,9 @@ pub const Settings = struct {
             \\cpu_scale = "{t}"
             \\details_width = {d}
             \\
+            \\[sidebar]
+            \\collapsed = {}
+            \\
             \\[accessibility]
             \\text_size = "{t}"
             \\more_contrast = {}
@@ -150,6 +156,7 @@ pub const Settings = struct {
             s.confirm_end_task,
             s.cpu_scale,
             s.details_width,
+            s.sidebar_collapsed,
             s.text_size,
             s.more_contrast,
             s.reduce_motion,
@@ -194,6 +201,7 @@ test "settings round-trip through their file" {
         .confirm_end_task = false,
         .cpu_scale = .core,
         .details_width = 410,
+        .sidebar_collapsed = true,
         .text_size = .larger,
         .more_contrast = true,
         .reduce_motion = true,
@@ -212,6 +220,7 @@ test "settings round-trip through their file" {
     try std.testing.expectEqual(TextSize.larger, back.text_size);
     try std.testing.expectEqual(CpuScale.core, back.cpu_scale);
     try std.testing.expectEqual(@as(u16, 410), back.details_width);
+    try std.testing.expect(back.sidebar_collapsed);
     try std.testing.expect(back.more_contrast and back.reduce_motion);
     s = back;
 }

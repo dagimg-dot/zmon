@@ -65,7 +65,7 @@ pub fn edge(c: *ui.Context, s: *State, k: theme.Colors, sidebar_w: f32) void {
 pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
     ui.key(c, "details-pane");
     // A window made narrower since the last drag still leaves the list room.
-    const sidebar_w: f32 = if (c.size.w < @import("sidebar.zig").compact_below) 76 else 236;
+    const sidebar_w = @import("sidebar.zig").width(c, s);
     const w = @min(@as(f32, @floatFromInt(s.settings.details_width)), maxWidth(c.size.w, sidebar_w));
     const box = ui.div(c).column().w(w).hFull().bg(k.panel).scrollY();
     defer box.end();

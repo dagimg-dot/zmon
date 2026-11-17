@@ -33,18 +33,29 @@ const Page = state.Page;
 /// Below this window width the sidebar keeps only its icons and values.
 pub const compact_below = 1000;
 
+/// Only icons and values: collapsed by the user, or a window too narrow for more.
+pub fn compact(c: *const ui.Context, s: *const State) bool {
+    return s.settings.sidebar_collapsed or c.size.w < compact_below;
+}
+
+pub fn width(c: *const ui.Context, s: *const State) f32 {
+    return if (compact(c, s)) 76 else 236;
+}
+
 pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const compact = c.size.w < compact_below;
-    const side = ui.div(c).column().w(if (compact) 76 else 236).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
+    const narrow = compact(c, s);
+    const side = ui.div(c).column().w(width(c, s)).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
     defer side.end();
-    if (compact) return drawCompact(c, s, k);
+    if (narrow) return drawCompact(c, s, k);
     {
         // The icon's corner sits as far from the top as from the left (20), in
         // line with the page icons below it.
-        const head = ui.div(c).row().px(10).pt(10).pb(10).itemsCenter().gap(10);
+        const head = ui.div(c).row().wFull().pl(10).pt(8).pb(8).itemsCenter().gap(10);
         defer head.end();
         app_icon.draw(c, 22);
         ui.text(c, "zmon", .{ .size = 17, .weight = .bold, .color = k.text });
+        ui.spacer(c);
+        collapseButton(c, s, k);
     }
     nav(c, s, k, .apps, "Apps", "square.grid.2x2");
     nav(c, s, k, .processes, "Processes", "waveform.path.ecg");
@@ -62,11 +73,7 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
 
 /// The narrow sidebar: the same pages and devices, icons and live values only.
 fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
-    {
-        const head = ui.div(c).row().wFull().pt(10).pb(10).justifyCenter();
-        defer head.end();
-        app_icon.draw(c, 22);
-    }
+    expandButton(c, s, k);
     navCompact(c, s, k, .apps, "Apps", "square.grid.2x2", "");
     navCompact(c, s, k, .processes, "Processes", "waveform.path.ecg", "");
     section(c, k, "");
@@ -79,6 +86,39 @@ fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
     if (smp.devices.battery.present) navCompact(c, s, k, .battery, "Battery", "", c.print("{d:.0}%", .{smp.devices.battery.percent}));
     ui.spacer(c);
     navCompact(c, s, k, .settings, "Settings", "gearshape", "");
+}
+
+/// The quiet sidebar icon beside the name that collapses the sidebar.
+fn collapseButton(c: *ui.Context, s: *State, k: theme.Colors) void {
+    ui.key(c, "collapse-sidebar");
+    const b = shortcut.tooltip(c, ui.div(c).row().size(26, 26).itemsCenter().justifyCenter().rounded(7).control(), k, "Collapse sidebar", shortcut.sidebar);
+    defer b.end();
+    const it = c.interact(b.index, .{});
+    _ = b.hover(k.hover);
+    if (controls.press(c, b, .{ .label = "Collapse sidebar" })) s.toggleSidebar();
+    ui.icon(c, "sidebar.left", .{ .size = 14, .frame = 16, .color = if (it.hovered) k.text else k.tertiary });
+}
+
+/// The app icon atop the collapsed sidebar, which turns into the sidebar
+/// icon when hovered or focused and expands it when pressed. A window too
+/// narrow to expand into keeps the plain icon.
+fn expandButton(c: *ui.Context, s: *State, k: theme.Colors) void {
+    ui.key(c, "expand-sidebar");
+    const head = ui.div(c).row().wFull().pt(6).pb(6).justifyCenter();
+    defer head.end();
+    if (c.size.w < compact_below) {
+        const logo = ui.div(c).size(30, 30).itemsCenter().justifyCenter();
+        defer logo.end();
+        return app_icon.draw(c, 22);
+    }
+    const b = shortcut.tooltip(c, ui.div(c).row().size(30, 30).itemsCenter().justifyCenter().rounded(8).control(), k, "Expand sidebar", shortcut.sidebar);
+    defer b.end();
+    const it = c.interact(b.index, .{ .focusable = true });
+    _ = b.hover(k.hover);
+    if (controls.press(c, b, .{ .label = "Expand sidebar" })) s.toggleSidebar();
+    if (it.hovered or (s.keyboard and c.focus == it.id)) {
+        ui.icon(c, "sidebar.left", .{ .size = 15, .frame = 18, .color = k.text });
+    } else app_icon.draw(c, 22);
 }
 
 fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8, value: []const u8) void {

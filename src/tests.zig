@@ -444,6 +444,7 @@ test "Tab reaches the sidebar with a visible focus ring, and Space opens the pag
     try tester(&t, &state);
     defer t.deinit();
     try std.testing.expect(t.ctx.focus_ring == null); // nothing drawn until a key is pressed
+    t.key(.tab); // Collapse sidebar
     t.key(.tab); // Apps
     t.key(.tab); // Processes
     t.settle(0.1);
@@ -518,6 +519,7 @@ test "Return on the sidebar opens the page and goes into it, and Escape comes ba
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
+    t.key(.tab); // Collapse sidebar
     t.key(.tab); // Apps
     t.key(.tab); // Processes
     t.key(.enter);
@@ -584,6 +586,7 @@ test "Escape retraces the way in: search, then list, then sidebar" {
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
+    t.key(.tab); // Collapse sidebar
     t.key(.tab); // Apps
     t.key(.tab); // Processes
     const nav = t.ctx.focus;
@@ -1135,4 +1138,51 @@ test "the details pane's close button closes it" {
     t.click(r.x + r.w / 2, r.y + r.h / 2);
     t.settle(0.2);
     try std.testing.expect(!state.details_open);
+}
+
+fn pressLabel(t: *ui.Tester, label: []const u8) !void {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena.allocator(), &els);
+    const el = for (els.items) |e| {
+        if (std.mem.eql(u8, e.label, label)) break e;
+    } else return error.NotFound;
+    const r = t.ctx.rects.get(el.id) orelse return error.NoRect;
+    t.click(r.x + r.w / 2, r.y + r.h / 2);
+    t.settle(0.2);
+}
+
+test "the sidebar's button collapses it to icons, and F9 or the app icon expands it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.hasText("Devices"));
+    try pressLabel(&t, "Collapse sidebar");
+    try std.testing.expect(state.settings.sidebar_collapsed);
+    try std.testing.expect(!t.hasText("Devices"));
+    try pressLabel(&t, "Expand sidebar");
+    try std.testing.expect(!state.settings.sidebar_collapsed);
+    try std.testing.expect(t.hasText("Devices"));
+    t.key(.f9);
+    t.settle(0.2);
+    try std.testing.expect(state.settings.sidebar_collapsed);
+    t.key(.f9);
+    t.settle(0.2);
+    try std.testing.expect(t.hasText("Devices"));
+}
+
+test "a window too narrow for the full sidebar offers no way to expand it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    state.settings.sidebar_collapsed = true;
+    var t: ui.Tester = undefined;
+    try t.init(std.testing.allocator, .init(&state, app_view.view), .{ .width = 880, .height = 560 });
+    defer t.deinit();
+    t.settle(0.3);
+    try std.testing.expectError(error.NotFound, pressLabel(&t, "Expand sidebar"));
 }

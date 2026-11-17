@@ -13,7 +13,7 @@ const Group = struct { title: []const u8, items: []const Item };
 /// Every shortcut zmon has; `keys.zig` handles them and README lists them.
 /// The ones a control has come from `ui/shortcut.zig`, as its tooltip shows them.
 pub const groups = [_]Group{
-    .{ .title = "General", .items = &.{ shortcut.search, shortcut.settings, shortcut.help, shortcut.pause, shortcut.quit } },
+    .{ .title = "General", .items = &.{ shortcut.search, shortcut.settings, shortcut.help, shortcut.pause, shortcut.sidebar, shortcut.quit } },
     .{ .title = "Pages", .items = &.{
         shortcut.apps,
         shortcut.processes,

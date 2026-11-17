@@ -295,6 +295,12 @@ pub const State = struct {
         s.rebuild();
     }
 
+    /// Collapses the sidebar to its icons, or expands it, and keeps the choice.
+    pub fn toggleSidebar(s: *State) void {
+        s.settings.sidebar_collapsed = !s.settings.sidebar_collapsed;
+        s.save();
+    }
+
     /// Pauses sampling, or resumes it.
     pub fn togglePause(s: *State) void {
         s.paused = !s.paused;

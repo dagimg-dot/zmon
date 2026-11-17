@@ -22,6 +22,7 @@ pub const search: Shortcut = .{ .what = "Search apps and processes", .keys = &.{
 pub const settings: Shortcut = .{ .what = "Settings", .keys = &.{ "Ctrl", "," } };
 pub const help: Shortcut = .{ .what = "Keyboard shortcuts", .keys = &.{ "Ctrl", "?" }, .alt = &.{"F1"} };
 pub const pause: Shortcut = .{ .what = "Pause or resume updates", .keys = &.{ "Ctrl", "Shift", "P" } };
+pub const sidebar: Shortcut = .{ .what = "Collapse or expand the sidebar", .keys = &.{"F9"} };
 pub const quit: Shortcut = .{ .what = "Quit", .keys = &.{ "Ctrl", "Q" } };
 pub const apps: Shortcut = .{ .what = "Apps", .keys = &.{ "Ctrl", "1" } };
 pub const processes: Shortcut = .{ .what = "Processes", .keys = &.{ "Ctrl", "2" } };
@@ -85,7 +86,7 @@ fn drawTip(tip: *const Tip, c: *ui.Context) void {
 }
 
 test "every shortcut has words and keys" {
-    const all = [_]Shortcut{ search, settings, help, pause, quit, apps, processes, cpu, memory, disk, network, next_page, previous_page, details, end_task, force_quit };
+    const all = [_]Shortcut{ search, settings, help, pause, sidebar, quit, apps, processes, cpu, memory, disk, network, next_page, previous_page, details, end_task, force_quit };
     for (all) |s| {
         try std.testing.expect(s.what.len > 0);
         try std.testing.expect(s.keys.len > 0);
