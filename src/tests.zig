@@ -12,6 +12,7 @@ test {
     _ = @import("ui/theme.zig");
     _ = @import("ui/fonts.zig");
     _ = @import("app/details.zig");
+    _ = @import("app/root_lookup.zig");
     _ = @import("ui/table.zig");
     _ = @import("ui/icon.zig");
 }

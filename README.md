@@ -5,7 +5,7 @@ A system monitor for Linux, written in Zig and drawn natively by [nanoui](https:
 ## What it does today
 
 - **Apps:** the apps you opened, with their launcher icons and the helpers they started folded in, with CPU, memory, disk and threads. Sort by any column, open an app to see its processes, end a task with a confirmation.
-- **Processes:** every process on the machine, one line each with its user, PID and the icon of the app it belongs to. Search by name or PID, or type `:8080` to find who holds a port. Sort by any column, end or force quit one process.
+- **Processes:** every process on the machine, one line each with its user, PID and the icon of the app it belongs to. Search by name or PID, or type `:8080` to find who holds a port. When another user's process holds it, "Show with administrator rights" asks for your password once (pkexec) and shows which one; nothing else runs as root. Sort by any column, end or force quit one process.
 - **Details** (Ctrl+I): the selected process's command line, state, priority, age and parent, and why it is running, an idea learned from [witr](https://github.com/pranshuparmar/witr): the chain of processes that started it, the systemd unit or container that keeps it, the Git repository it works in, the sockets it holds, and warnings such as running as root or running a program that has since been updated.
 - **Devices:** a sidebar tile for the CPU, memory, disk, network and (where there is one) battery, with its live value and a chart of the last minute, five minutes or hour. Each opens a page:
   - CPU: each core's load and clock speed, the machine's temperatures and how often tasks waited.

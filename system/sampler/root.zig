@@ -18,6 +18,13 @@ const Ring = core.Ring;
 const Cpu = backend.cpu.Times;
 
 pub const Worker = @import("worker.zig").Worker;
+
+/// The one thing zmon does as root, and only when asked: list the processes
+/// holding `port`, all of them, for `zmon --port-holders PORT` run through
+/// pkexec. It reads and returns; nothing else runs with privilege.
+pub fn portHoldersAll(io: std.Io, port: u16) backend.origin.Holders {
+    return backend.origin.holders(io, port, 0, true);
+}
 pub const Waker = @import("worker.zig").Waker;
 
 /// Ending tasks: who we are, and signals that only reach the process that was sampled.
@@ -149,7 +156,7 @@ pub const Sampler = struct {
         _ = s.arena.reset(.retain_capacity);
         s.collectProcs(dt, first);
         s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start, s.unitOf(s.want.detail_pid)) else null;
-        s.port_holders = if (s.want.port > 0) backend.origin.holders(s.io, s.want.port, backend.process.currentUid()) else .{};
+        s.port_holders = if (s.want.port > 0) backend.origin.holders(s.io, s.want.port, backend.process.currentUid(), false) else .{};
         s.collectCpu();
         s.memory = backend.memory.read(s.io);
         s.collectDisk(dt, first);

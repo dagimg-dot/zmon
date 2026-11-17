@@ -221,7 +221,9 @@ pub const Holders = struct {
     other_uid: ?u32 = null,
 };
 
-pub fn holders(io: std.Io, port: u16, me: u32) Holders {
+/// `all`: every socket on the port, whoever owns it (as root, every
+/// process's open files can be read).
+pub fn holders(io: std.Io, port: u16, me: u32, all: bool) Holders {
     var h: Holders = .{};
     var want: [64]u64 = undefined;
     var n_want: usize = 0;
@@ -233,7 +235,7 @@ pub fn holders(io: std.Io, port: u16, me: u32) Holders {
         while (lines.next()) |line| {
             const e = parseEntry(line) orelse continue;
             if (portOf(e.local) != port or e.inode == 0) continue;
-            if (e.uid != me) {
+            if (e.uid != me and !all) {
                 h.other_uid = e.uid;
                 continue;
             }

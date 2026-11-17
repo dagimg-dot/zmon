@@ -6,6 +6,7 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const core = @import("zmon-core");
 const fmt = core.fmt;
+const system = @import("zmon-system");
 const app = @import("../../app/state.zig");
 const theme = @import("../../ui/theme.zig");
 const table = @import("../../ui/table.zig");
@@ -38,6 +39,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.list_hovered = list.hovered;
     if (s.proc_rows.len == 0) {
         const query = s.search.text();
+        if (core.search.port(query)) |port| return portEmpty(c, s, k, port);
         return table.empty(c, k, if (core.search.port(query)) |port|
             portMessage(c, s, port)
         else if (query.len > 0)
@@ -53,6 +55,25 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     while (rows.next()) |i| procRow(c, s, k, &columns, s.proc_rows[i], i);
     rows.end();
     s.endList();
+}
+
+/// A ":port" search with no row: why, and for another user's process, a
+/// way to see which one by asking for root once.
+fn portEmpty(c: *ui.Context, s: *State, k: theme.Colors, port: u16) void {
+    const d = ui.div(c).column().wFull().grow().itemsCenter().pt(48).gap(14);
+    defer d.end();
+    {
+        const words = ui.div(c).column().maxW(520).px(24).itemsCenter();
+        defer words.end();
+        ui.text(c, portMessage(c, s, port), .{ .size = 13, .color = k.secondary });
+    }
+    if (s.sample.port != port or s.sample.port_holders.other_uid == null) return;
+    if (s.lookingUp()) {
+        ui.text(c, "Waiting for your password…", .{ .size = 12.5, .color = k.tertiary });
+    } else if (controls.button(c, k, "Show with administrator rights", .{ .icon = "lock", .hint = "Asks for your password once" })) {
+        const waker: ?system.sampler.Waker = if (c.waker) |w| .{ .ctx = w.ctx, .wake = w.wake } else null;
+        s.lookUpAsRoot(port, waker);
+    }
 }
 
 /// What a ":port" search found when no row shows: nothing yet, nothing at

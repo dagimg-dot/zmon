@@ -67,6 +67,7 @@ src/      the executable. The only place nanoui is imported.
 - **Ending tasks.**
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
   - Ask before adding anything that signals other users' processes or needs privilege.
+  - The one privileged path (the owner's decision): "Show with administrator rights" on a port search runs `zmon --port-holders PORT` through pkexec, only when pressed. That mode reads which processes hold the port, prints their pids and exits (`main.zig`, `app/root_lookup.zig`). Nothing else may run as root, and it never signals anything.
 - **Look.**
   - One typeface: Lexend, bundled in `src/ui/assets/fonts` and named by the theme, so every widget uses it, numbers included. Never set another font or `.mono`. The window must carry the themed font too (`main.zig`), because nanoui takes its font from the window's theme, not from the context's, and a render is only proof when compared against glyphs drawn from the font file. Glyphs it lacks fall back to the system's fonts.
   - Every colour comes from the active theme, through `theme.Colors` (`src/ui/theme.zig`). No raw hex colours in a page or widget. Graphite Dark and Graphite Light are zmon's own themes and the defaults; keep them monochrome, where emphasis is weight and contrast, not hue.

@@ -9,6 +9,7 @@ const kit = nanoui.kit;
 const core = @import("zmon-core");
 const system = @import("zmon-system");
 const apps = system.apps;
+const root_lookup = @import("root_lookup.zig");
 
 /// The page shown: the apps, every process, one device's page, or Settings.
 pub const Page = enum { apps, processes, cpu, memory, disk, network, battery, settings };
@@ -60,6 +61,12 @@ pub const State = struct {
     /// pid, app groups by their root's pid.
     proc_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
     group_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
+    /// Asking for root to see who holds a port (`root_lookup.zig`), and what
+    /// it found: the port and the pids.
+    lookup: ?*root_lookup.Lookup = null,
+    root_port: u16 = 0,
+    root_pids: [16]i32 = undefined,
+    root_count: u8 = 0,
     /// Sampling is paused: every figure holds until resumed. Not saved.
     paused: bool = false,
     /// The Background section of Apps is open.
@@ -249,8 +256,41 @@ pub const State = struct {
         s.built.deinit();
         s.icons.deinit();
         s.index.deinit();
+        if (s.lookup) |l| l.finish();
         s.worker.destroy();
         s.users.deinit();
+    }
+
+    /// Asks for root, once, to see which processes hold `port`.
+    pub fn lookUpAsRoot(s: *State, port: u16, waker: ?system.sampler.Waker) void {
+        if (s.lookup != null) return;
+        s.lookup = root_lookup.Lookup.start(s.gpa, s.io, port, waker) catch {
+            s.toaster.push(.{ .title = "Couldn't ask for administrator rights", .message = "" });
+            return;
+        };
+    }
+
+    /// Whether a root lookup is waiting for a password.
+    pub fn lookingUp(s: *const State) bool {
+        return s.lookup != null;
+    }
+
+    /// Takes a root lookup's answer once it has one.
+    fn checkLookup(s: *State) void {
+        const l = s.lookup orelse return;
+        switch (l.status.load(.acquire)) {
+            .running => return,
+            .found => {
+                s.root_port = l.port;
+                s.root_count = l.count;
+                @memcpy(s.root_pids[0..l.count], l.pids[0..l.count]);
+                if (l.count == 0) s.toaster.push(.{ .title = "Nothing holds that port now", .message = "" });
+            },
+            .failed => s.toaster.push(.{ .title = "Couldn't get administrator rights", .message = l.reason, .duration = 8 }),
+        }
+        l.finish();
+        s.lookup = null;
+        s.rebuild();
     }
 
     /// Pauses sampling, or resumes it.
@@ -277,6 +317,7 @@ pub const State = struct {
     /// the view should look again.
     pub fn tick(s: *State, now: f64) f32 {
         s.hold_order = s.onList() and (s.list_hovered or now - s.list_key_time < 3);
+        s.checkLookup();
         if (s.frozen) return 1;
         // The process list is read only while something shows or watches it.
         var want: system.sampler.Want = .{
@@ -455,6 +496,7 @@ pub const State = struct {
     /// ":port" search, by holding that port.
     fn procMatches(s: *const State, p: core.Proc) bool {
         if (core.search.port(s.search.text())) |port| {
+            if (s.root_port == port and std.mem.indexOfScalar(i32, s.root_pids[0..s.root_count], p.pid) != null) return true;
             if (s.sample.port != port) return false;
             const h = s.sample.port_holders;
             return std.mem.indexOfScalar(i32, h.pids[0..h.count], p.pid) != null;
