@@ -225,6 +225,10 @@ pub const Library = struct {
             for (0..count) |k| t.palette[k] = lib.resolve(i, @fromBackingInt(@intCast(k)), 0);
             t.palette[@backingInt(Token.accent_fg)] = lib.readableOn(i, .accent_fg, .accent);
             t.palette[@backingInt(Token.selection_fg)] = lib.readableOn(i, .selection_fg, .selection_bg);
+            // Quiet text stays readable on the page and on panels: secondary
+            // text at body-text contrast (WCAG AA, 4.5:1), the quietest at 3:1.
+            t.palette[@backingInt(Token.muted)] = lib.atLeast(i, .muted, 4.5);
+            t.palette[@backingInt(Token.placeholder)] = lib.atLeast(i, .placeholder, 3.0);
             t.dark = t.color(.background).luminance() < 0.4;
         }
     }
@@ -323,6 +327,26 @@ pub const Library = struct {
         const own = t.palette[@backingInt(text)].over(fill);
         if (Rgba.contrast(own, fill) >= 3) return own;
         return lib.bestOn(i, fill);
+    }
+
+    /// `tok` moved toward the text colour, no further than it takes to reach
+    /// `ratio` on both the background and the panel, so it keeps its hue.
+    fn atLeast(lib: *const Library, i: usize, tok: Token, ratio: f32) Rgba {
+        const t = &lib.themes.items[i];
+        const bg = t.palette[@backingInt(Token.background)];
+        const panel = t.palette[@backingInt(Token.panel)].over(bg);
+        const text = t.palette[@backingInt(Token.foreground)];
+        const own = t.palette[@backingInt(tok)].over(bg);
+        // Toward the text colour; where even that falls short (Solarized
+        // Light's text on its panel), toward black or white.
+        const reaches = Rgba.contrast(text, bg) >= ratio and Rgba.contrast(text, panel) >= ratio;
+        const goal = if (reaches) text else if (bg.luminance() < 0.4) Rgba.white else Rgba.black;
+        var step: f32 = 0;
+        while (step <= 1) : (step += 0.05) {
+            const c = own.mix(goal, step);
+            if (Rgba.contrast(c, bg) >= ratio and Rgba.contrast(c, panel) >= ratio) return c;
+        }
+        return goal;
     }
 
     fn bestOn(lib: *const Library, i: usize, under: Rgba) Rgba {

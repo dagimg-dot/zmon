@@ -37,7 +37,8 @@ test "Apps lists the apps that are open, and Processes every process" {
     t.settle(0.2);
     try std.testing.expectEqual(app_state.Page.processes, state.page);
     try std.testing.expect(t.hasText("PID"));
-    try std.testing.expectEqual(state.sample.procs.len, state.proc_rows.len); // the system's own tasks are shown by default
+    for (state.proc_rows) |i| try std.testing.expect(!state.sample.procs[i].kthread); // kernel threads are hidden by default
+    try std.testing.expect(state.proc_rows.len > 0);
 }
 
 test "a device tile in the sidebar opens that device's page" {
@@ -200,18 +201,25 @@ test "under Match system the gallery switches between dark and light themes" {
     try std.testing.expectEqualStrings("graphite-light", state.theme(false).id);
 }
 
-test "turning off the system's own tasks takes the kernel's threads out of Processes" {
+test "showing kernel threads puts them in Processes, and hiding them takes them out" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
     try openSettings(&t, &state);
-    try reveal(&t, "Show the system's own tasks");
-    try t.clickText("Show the system's own tasks");
+    try reveal(&t, "Show kernel threads");
+    try t.clickText("Show kernel threads");
     t.settle(0.2);
-    try std.testing.expect(!state.settings.show_kernel_threads);
+    try std.testing.expect(state.settings.show_kernel_threads);
+    var kernel: usize = 0;
+    for (state.proc_rows) |i| kernel += @intFromBool(state.sample.procs[i].kthread);
+    try std.testing.expectEqual(@as(usize, 2), kernel);
+    try t.clickText("Show kernel threads");
+    t.settle(0.2);
     for (state.proc_rows) |i| try std.testing.expect(!state.sample.procs[i].kthread);
 }
 
@@ -295,7 +303,7 @@ test "arrow keys move the selection, Home and End jump, and Delete asks before e
     try t.clickText("Processes");
     t.settle(0.2);
     const n = state.proc_rows.len;
-    try std.testing.expectEqual(f.snap.procs.len, n); // the kernel threads are shown
+    try std.testing.expectEqual(f.snap.procs.len - 2, n); // all but the two kernel threads
     _ = t.shortcut(.{ .key = ui.Shortcut.down });
     try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
     try std.testing.expectEqual(@as(i32, 100), state.selected_proc); // busiest first

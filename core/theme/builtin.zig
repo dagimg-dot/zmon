@@ -60,7 +60,10 @@ test "every built-in theme reads cleanly and its text can be read on its backgro
         const bg = t.color(.background);
         const checks = [_]struct { what: []const u8, ratio: f32, min: f32 }{
             .{ .what = "text", .ratio = color.Rgba.contrast(t.color(.foreground), bg), .min = 4.0 },
-            .{ .what = "muted text", .ratio = color.Rgba.contrast(t.color(.muted), bg), .min = 2.4 },
+            .{ .what = "muted text", .ratio = color.Rgba.contrast(t.color(.muted), bg), .min = 4.5 },
+            .{ .what = "muted text on a panel", .ratio = color.Rgba.contrast(t.color(.muted), t.color(.panel).over(bg)), .min = 4.5 },
+            .{ .what = "quietest text", .ratio = color.Rgba.contrast(t.color(.placeholder), bg), .min = 3.0 },
+            .{ .what = "quietest text on a panel", .ratio = color.Rgba.contrast(t.color(.placeholder), t.color(.panel).over(bg)), .min = 3.0 },
             .{ .what = "text on accent", .ratio = color.Rgba.contrast(t.color(.accent_fg), t.color(.accent)), .min = 3.0 },
             .{ .what = "selected text", .ratio = color.Rgba.contrast(t.color(.selection_fg).over(t.color(.selection_bg)), t.color(.selection_bg).over(bg)), .min = 3.0 },
         };

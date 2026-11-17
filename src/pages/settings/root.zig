@@ -98,7 +98,7 @@ fn processes(c: *ui.Context, s: *State, k: theme.Colors) void {
     row.heading(c, k, "Apps and processes");
     const g = row.group(c, k, "processes");
     defer g.end();
-    if (row.switchRow(c, k, "kernel", "Show the system's own tasks", "The kernel's threads, listed in Processes.", true, &s.settings.show_kernel_threads)) {
+    if (row.switchRow(c, k, "kernel", "Show kernel threads", "The kernel's own workers, listed in Processes. They can't be ended, and most do nothing most of the time.", true, &s.settings.show_kernel_threads)) {
         s.save();
         s.rebuild();
     }

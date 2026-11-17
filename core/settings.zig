@@ -65,7 +65,9 @@ pub const Settings = struct {
     light_theme: ThemeId = .init("graphite-light"),
     colored_graphs: bool = true,
     span: Span = .minute,
-    show_kernel_threads: bool = true,
+    /// The kernel's own threads: nearly half the list on most machines,
+    /// none of them a person can end. Off unless asked for.
+    show_kernel_threads: bool = false,
     confirm_end_task: bool = true,
     cpu_scale: CpuScale = .machine,
     text_size: TextSize = .default,
@@ -165,7 +167,7 @@ test "settings round-trip through their file" {
         .light_theme = .init("gruvbox-light"),
         .colored_graphs = false,
         .span = .five_minutes,
-        .show_kernel_threads = false,
+        .show_kernel_threads = true,
         .confirm_end_task = false,
         .cpu_scale = .core,
         .text_size = .larger,
@@ -181,7 +183,7 @@ test "settings round-trip through their file" {
     try std.testing.expectEqualStrings("gruvbox-light", back.light_theme.slice());
     try std.testing.expect(!back.colored_graphs);
     try std.testing.expectEqual(Span.five_minutes, back.span);
-    try std.testing.expect(!back.show_kernel_threads and !back.confirm_end_task);
+    try std.testing.expect(back.show_kernel_threads and !back.confirm_end_task);
     try std.testing.expectEqual(TextSize.larger, back.text_size);
     try std.testing.expectEqual(CpuScale.core, back.cpu_scale);
     try std.testing.expect(back.more_contrast and back.reduce_motion);
