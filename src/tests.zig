@@ -5,6 +5,7 @@ const nanoui = @import("nanoui");
 const ui = nanoui.ui;
 const app_state = @import("app/state.zig");
 const app_view = @import("app/view.zig");
+const core = @import("zmon-core");
 
 test {
     _ = @import("ui/charts.zig");
@@ -231,27 +232,81 @@ test "Reset to defaults brings back Graphite and the default switches" {
     try std.testing.expect(state.settings.colored_graphs);
 }
 
+/// A made-up machine, so what a test checks doesn't move between key
+/// presses: an app with two helpers, an editor, a service under another
+/// user, init, two kernel threads, and this test itself.
+const Fixture = struct {
+    snap: @import("zmon-system").sampler.Snapshot,
+
+    fn init(state: *app_state.State) !*Fixture {
+        const f = try std.testing.allocator.create(Fixture);
+        f.* = .{ .snap = .init(std.testing.allocator) };
+        const a = f.snap.arena.allocator();
+        const me = std.os.linux.getuid();
+        const self = std.os.linux.getpid();
+        const P = core.Proc;
+        const procs = try a.dupe(P, &[_]P{
+            .{ .pid = 1, .ppid = 0, .name = "systemd", .comm = "systemd", .uid = 0, .start = 1 },
+            .{ .pid = 2, .ppid = 0, .name = "kthreadd", .comm = "kthreadd", .kthread = true, .start = 1 },
+            .{ .pid = 3, .ppid = 2, .name = "kworker/0:1", .comm = "kworker/0:1", .kthread = true, .start = 2 },
+            .{ .pid = 100, .ppid = 1, .name = "browser", .comm = "browser", .exe = "/usr/bin/browser", .program = "browser", .uid = me, .start = 10, .cpu = 30, .memory = 300 << 20, .unit = "app-test.Browser-100.scope" },
+            .{ .pid = 101, .ppid = 100, .name = "browser", .comm = "browser", .exe = "/usr/bin/browser", .program = "browser", .uid = me, .start = 11, .cpu = 20, .memory = 200 << 20, .unit = "app-test.Browser-100.scope" },
+            .{ .pid = 102, .ppid = 100, .name = "browser", .comm = "browser", .exe = "/usr/bin/browser", .program = "browser", .uid = me, .start = 12, .cpu = 1, .memory = 50 << 20, .unit = "app-test.Browser-100.scope" },
+            .{ .pid = 200, .ppid = 1, .name = "editor", .comm = "editor", .exe = "/usr/bin/editor", .program = "editor", .uid = me, .start = 20, .cpu = 5, .memory = 100 << 20, .unit = "app-test.Editor-200.scope" },
+            .{ .pid = 500, .ppid = 1, .name = "daemon", .comm = "daemon", .program = "daemon", .uid = 4242, .start = 30, .cpu = 2, .memory = 10 << 20, .unit = "daemon.service" },
+            .{ .pid = self, .ppid = 1, .name = "zmon-test", .comm = "test", .uid = me, .start = 40, .cpu = 1, .memory = 20 << 20 },
+        });
+        f.snap.procs = procs;
+        f.snap.cores = try a.dupe(f32, &.{ 10, 20, 30, 40 });
+        f.snap.samples = 2;
+        f.snap.procs_read = true;
+        f.snap.process_count = @intCast(procs.len);
+        state.index.add("test.Browser", "[Desktop Entry]\nType=Application\nName=Browser\nExec=browser\n");
+        state.index.add("test.Editor", "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n");
+        state.useSample(&f.snap);
+        return f;
+    }
+
+    fn deinit(f: *Fixture) void {
+        f.snap.deinit();
+        std.testing.allocator.destroy(f);
+    }
+};
+
+test "the fixture groups as the app would: two apps, a service, the kernel" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    try std.testing.expectEqual(@as(usize, 2), state.appCount());
+    try std.testing.expectEqualStrings("Browser", state.groups[0].name); // busiest app first
+    try std.testing.expectEqual(@as(usize, 3), state.groups[0].members.len);
+}
+
 test "arrow keys move the selection, Home and End jump, and Delete asks before ending" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
     try t.clickText("Processes");
     t.settle(0.2);
-    if (state.proc_rows.len < 3) return error.SkipZigTest;
+    const n = state.proc_rows.len;
+    try std.testing.expectEqual(f.snap.procs.len, n); // the kernel threads are shown
     _ = t.shortcut(.{ .key = ui.Shortcut.down });
     try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    try std.testing.expectEqual(@as(i32, 100), state.selected_proc); // busiest first
     _ = t.shortcut(.{ .key = ui.Shortcut.down });
-    try std.testing.expectEqual(@as(?usize, 1), state.selectedRow());
+    try std.testing.expectEqual(@as(i32, 101), state.selected_proc);
     _ = t.shortcut(.{ .key = ui.Shortcut.up });
-    try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
+    try std.testing.expectEqual(@as(i32, 100), state.selected_proc);
     t.key(.end);
-    try std.testing.expectEqual(state.proc_rows.len - 1, state.selectedRow().?);
+    try std.testing.expectEqual(n - 1, state.selectedRow().?);
     t.key(.home);
     try std.testing.expectEqual(@as(?usize, 0), state.selectedRow());
-    const chosen = state.selected_proc; // the list re-sorts live, so follow the process, not its row
     t.key(.delete); // asks first; the test never confirms, so nothing is signalled
     try std.testing.expect(state.confirm);
     _ = t.shortcut(.{ .key = ui.Shortcut.escape });
@@ -259,30 +314,71 @@ test "arrow keys move the selection, Home and End jump, and Delete asks before e
     try std.testing.expect(!state.confirm);
     _ = t.shortcut(.{ .key = ui.Shortcut.escape }); // with no search, Escape goes back to the sidebar
     try std.testing.expectEqual(state.nav_ids.get(.processes), t.ctx.focus);
-    try std.testing.expectEqual(chosen, state.selected_proc); // and the selection stays
+    try std.testing.expectEqual(@as(i32, 100), state.selected_proc); // and the selection stays
 }
 
 test "Right shows an app's processes and Left hides them again" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
     var t: ui.Tester = undefined;
     try tester(&t, &state);
     defer t.deinit();
-    const at = for (state.app_rows, 0..) |r, i| switch (r) {
-        .group => |g| if (state.groups[g].members.len > 1) break i,
-        .proc, .background => {},
-    } else return error.SkipZigTest; // no app with helpers is running
-    while (state.selectedRow() != at) _ = t.shortcut(.{ .key = ui.Shortcut.down });
-    const root = state.selected_app;
+    _ = t.shortcut(.{ .key = ui.Shortcut.down }); // Browser
+    try std.testing.expectEqual(@as(i32, 100), state.selected_app);
     t.key(.right);
-    try std.testing.expect(state.expanded.contains(root));
-    _ = t.shortcut(.{ .key = ui.Shortcut.down }); // onto its first process
-    try std.testing.expect(state.selected_app != root);
+    try std.testing.expect(state.expanded.contains(100));
+    _ = t.shortcut(.{ .key = ui.Shortcut.down }); // onto its busiest helper
+    try std.testing.expectEqual(@as(i32, 101), state.selected_app);
     t.key(.left); // back to the app
-    try std.testing.expectEqual(root, state.selected_app);
+    try std.testing.expectEqual(@as(i32, 100), state.selected_app);
     t.key(.left);
-    try std.testing.expect(!state.expanded.contains(root));
+    try std.testing.expect(!state.expanded.contains(100));
+}
+
+test "End task refuses init, kernel threads, other users' processes and zmon itself" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    state.page = .processes;
+    state.settings.show_kernel_threads = true;
+    state.rebuild();
+    for ([_]i32{ 1, 3, 500, std.os.linux.getpid() }) |pid| {
+        for (state.toaster.items.items) |e| state.toaster.gpa.free(e.text);
+        state.toaster.items.clearRetainingCapacity();
+        state.selected_proc = pid;
+        state.endTask(false); // refused before any signal is sent
+        try std.testing.expect(toasted(&state, "Can't end"));
+    }
+}
+
+test "sorting by name, user and pid orders the rows, with ties by pid" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    state.page = .processes;
+    const procs = state.sample.procs;
+    state.sortBy(.pid);
+    for (state.proc_rows[1..], state.proc_rows[0 .. state.proc_rows.len - 1]) |b, a| try std.testing.expect(procs[a].pid < procs[b].pid);
+    state.sortBy(.name);
+    // the three "browser"s, by pid
+    var seen: [3]i32 = undefined;
+    var n: usize = 0;
+    for (state.proc_rows) |r| if (std.mem.eql(u8, procs[r].name, "browser")) {
+        seen[n] = procs[r].pid;
+        n += 1;
+    };
+    try std.testing.expectEqualSlices(i32, &.{ 100, 101, 102 }, &seen);
+    state.sortBy(.user);
+    for (state.proc_rows[1..], state.proc_rows[0 .. state.proc_rows.len - 1]) |b, a| {
+        const ua = state.users.name(procs[a].uid) orelse "";
+        const ub = state.users.name(procs[b].uid) orelse "";
+        try std.testing.expect(!std.ascii.lessThanIgnoreCase(ub, ua));
+    }
 }
 
 test "typing on a list starts a search, and Escape clears it" {

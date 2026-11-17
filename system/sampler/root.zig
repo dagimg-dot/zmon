@@ -188,8 +188,16 @@ pub const Sampler = struct {
         const a = s.arena.allocator();
         var list: std.ArrayList(Proc) = .empty;
         s.process_count = s.reader.scan(s.io, a, &list, .{ .kernel_threads = s.want.kernel_threads });
+        s.applyRates(list.items, dt, fresh);
+        s.procs = list.items;
+    }
+
+    /// Turns each process's counters into rates against the last sample. A
+    /// pid with another start time is a new process (the pid was reused) and
+    /// has no rate yet; counters that went backwards count as nothing.
+    fn applyRates(s: *Sampler, procs: []Proc, dt: f64, fresh: bool) void {
         s.next_prev.clearRetainingCapacity();
-        for (list.items) |*p| {
+        for (procs) |*p| {
             if (s.prev.get(p.pid)) |old| {
                 if (old.start == p.start and !fresh) {
                     const ticks = p.cpu_ticks -| old.ticks;
@@ -203,7 +211,6 @@ pub const Sampler = struct {
             s.next_prev.put(s.gpa, p.pid, .{ .ticks = p.cpu_ticks, .start = p.start, .read = p.disk_read, .write = p.disk_write }) catch {};
         }
         std.mem.swap(@TypeOf(s.prev), &s.prev, &s.next_prev);
-        s.procs = list.items;
     }
 
     fn collectCpu(s: *Sampler) void {
@@ -367,6 +374,29 @@ test "the sampler and its backend compile on every OS" {
     std.testing.refAllDecls(Sampler);
     std.testing.refAllDecls(Snapshot);
     std.testing.refAllDecls(Worker);
+}
+
+test "rates come from the last sample of the same process, never a reused pid's" {
+    var s = Sampler.init(std.testing.allocator, std.testing.io);
+    defer s.deinit();
+    s.hz = 100;
+    var one = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 100, .disk_read = 1000, .io_known = true }};
+    s.applyRates(&one, 1, false);
+    try std.testing.expectEqual(@as(f32, 0), one[0].cpu); // nothing to measure against yet
+    var two = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 150, .disk_read = 3000, .io_known = true }};
+    s.applyRates(&two, 1, false);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), two[0].cpu, 0.01); // 50 ticks of 100 a second
+    try std.testing.expectApproxEqAbs(@as(f32, 2000), two[0].disk_bps, 0.01);
+    var reused = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 400, .io_known = true }};
+    s.applyRates(&reused, 1, false);
+    try std.testing.expectEqual(@as(f32, 0), reused[0].cpu); // another process under the same pid
+    var backwards = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 300, .disk_read = 0, .io_known = true }};
+    s.applyRates(&backwards, 1, false);
+    try std.testing.expectEqual(@as(f32, 0), backwards[0].cpu);
+    try std.testing.expectEqual(@as(f32, 0), backwards[0].disk_bps);
+    var after_gap = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 900 }};
+    s.applyRates(&after_gap, 1, true); // the list was closed: earlier ticks are stale
+    try std.testing.expectEqual(@as(f32, 0), after_gap[0].cpu);
 }
 
 test "a snapshot owns its names, so the sampler can drop its own" {

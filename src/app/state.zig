@@ -68,6 +68,8 @@ pub const State = struct {
     worker: *system.sampler.Worker,
     /// The sample the pages show: the worker's, read-only, until the next one.
     sample: *const system.sampler.Snapshot,
+    /// Tests hand the state a fixed sample (`useSample`): it then never samples.
+    frozen: bool = false,
     /// Sample on the worker's thread (the app); tests leave it off and sample in `tick`.
     threaded: bool = false,
     /// What was last asked of the worker, to wake it only when that changes.
@@ -245,6 +247,14 @@ pub const State = struct {
         s.users.deinit();
     }
 
+    /// Shows `snap` and samples no more: tests feed made-up processes, so
+    /// what they check doesn't move between key presses.
+    pub fn useSample(s: *State, snap: *const system.sampler.Snapshot) void {
+        s.frozen = true;
+        s.sample = snap;
+        s.rebuild();
+    }
+
     /// Samples on the worker's own thread from now on; `waker` asks the
     /// window for a frame when a sample is ready.
     pub fn startSampling(s: *State, waker: ?system.sampler.Waker) void {
@@ -256,6 +266,7 @@ pub const State = struct {
     /// the view should look again.
     pub fn tick(s: *State, now: f64) f32 {
         s.hold_order = s.onList() and (s.list_hovered or now - s.list_key_time < 3);
+        if (s.frozen) return 1;
         // The process list is read only while something shows or watches it.
         var want: system.sampler.Want = .{
             .procs = s.onList() or s.confirm or s.quit_watch != null,
