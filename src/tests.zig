@@ -940,6 +940,34 @@ test "the details say why a process runs: its parents, its service, and a warnin
     try std.testing.expect(t.hasText("Runs as root: it can change anything on this machine."));
 }
 
+test "the details name an owner without an account by number, and the number outlives the frame" {
+    // The number is formatted into a buffer of the pane's: drawn after the
+    // view returns, it must be a copy, or the row shows whatever took its place.
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    // Apps, whose list has no User column: the pane's row is the only "4242".
+    state.details_open = true;
+    state.selected_app = 500; // the daemon, run by uid 4242, which has no account
+    t.settle(0.3);
+    try std.testing.expect(t.hasText("Why it's running"));
+    clobberStack();
+    try std.testing.expect(t.hasText("4242"));
+}
+
+/// Overwrites the stack below the caller, where the last frame's view ran,
+/// so text left pointing into a buffer of the view's no longer reads as it did.
+noinline fn clobberStack() void {
+    var junk: [256 * 1024]u8 = undefined;
+    @memset(&junk, 0xaa);
+    std.mem.doNotOptimizeAway(&junk);
+}
+
 test "every page, the details and the shortcuts draw with Lexend alone, never a fallback font" {
     // A character Lexend lacks makes the text system read a fallback font
     // whole and keep it: on a machine with CJK fonts, 20 to 30 MB.

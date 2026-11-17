@@ -89,7 +89,7 @@ pub fn pane(c: *ui.Context, s: *State, k: theme.Colors, open: f32) void {
     {
         const rows = ui.div(c).column().wFull().gap(7);
         defer rows.end();
-        line(c, k, "User", s.userName(&b[0], p.uid));
+        line(c, k, "User", fmt.own(c.alloc(), s.userName(&b[0], p.uid)));
         line(c, k, "State", stateWord(p.state));
         line(c, k, "Priority", c.print("{d}{s}", .{ p.nice, niceWord(p.nice) }));
         if (s.sample.hz > 0 and s.sample.uptime > 0) {
