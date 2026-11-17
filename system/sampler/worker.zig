@@ -105,6 +105,11 @@ pub const Worker = struct {
         w.sampleOnce();
     }
 
+    /// Seconds between samples, as the app asks.
+    pub fn period(w: *Worker) f64 {
+        return @as(f64, @floatFromInt(@max(100, w.want.get().interval_ms))) / 1000;
+    }
+
     /// Whether the last sample has nothing to measure rates against, so
     /// the next should come soon.
     pub fn ratesPending(w: *const Worker) bool {
@@ -130,6 +135,13 @@ pub const Worker = struct {
         var next = clock.now();
         var seen = w.signal.load(.acquire);
         while (!w.stopping.load(.acquire)) {
+            // Paused: sleep until asked for something.
+            if (w.want.get().paused) {
+                w.io.futexWaitTimeout(u32, &w.signal.raw, seen, .{ .duration = .{ .raw = .{ .nanoseconds = 5 * std.time.ns_per_s }, .clock = .awake } }) catch {};
+                seen = w.signal.load(.acquire);
+                next = clock.now();
+                continue;
+            }
             const left = next - clock.now();
             if (left > 0) {
                 const ns: i96 = @intFromFloat(left * 1e9);
@@ -143,10 +155,10 @@ pub const Worker = struct {
             w.sampleOnce();
             // On the second, not a second after each sample; soon when the
             // sample had nothing to measure rates against; after a stall, from now.
-            const period: f64 = if (w.ratesPending()) 0.3 else 1.0;
+            const gap: f64 = if (w.ratesPending()) 0.3 else w.period();
             const t = clock.now();
-            next = if (t - next < period) next + period else t + period;
-            if (next < t) next = t + period;
+            next = if (t - next < gap) next + gap else t + gap;
+            if (next < t) next = t + gap;
         }
     }
 };
@@ -158,6 +170,7 @@ const WantCell = struct {
     flags: std.atomic.Value(u32) = .init(3),
     pid: std.atomic.Value(i32) = .init(0),
     port: std.atomic.Value(u32) = .init(0),
+    interval: std.atomic.Value(u32) = .init(1000),
     start: std.atomic.Value(u64) = .init(0),
 
     /// One writer only: the app's thread.
@@ -170,6 +183,7 @@ const WantCell = struct {
             @as(u32, @intFromBool(want.devices.network)) << 4, .release);
         c.pid.store(want.detail_pid, .release);
         c.port.store(want.port, .release);
+        c.interval.store(@as(u32, want.interval_ms) | @as(u32, @intFromBool(want.paused)) << 31, .release);
         c.start.store(want.detail_start, .release);
         _ = c.seq.fetchAdd(1, .acq_rel);
     }
@@ -188,6 +202,8 @@ const WantCell = struct {
                 .devices = .{ .cpu = flags & 4 != 0, .disks = flags & 8 != 0, .network = flags & 16 != 0 },
                 .detail_pid = c.pid.load(.acquire),
                 .port = @intCast(c.port.load(.acquire)),
+                .interval_ms = @intCast(c.interval.load(.acquire) & 0xffff),
+                .paused = c.interval.load(.acquire) >> 31 != 0,
                 .detail_start = c.start.load(.acquire),
             };
             if (c.seq.load(.acquire) == before) return want;
@@ -243,4 +259,19 @@ test "the thread samples on its own, wakes early when asked, and stops" {
     try std.testing.expect(clock.now() - asked < 0.9);
     w.stop();
     try std.testing.expect(!w.running());
+}
+
+test "a paused worker takes no samples until resumed" {
+    var w = try Worker.create(std.testing.allocator, std.testing.io);
+    defer w.destroy();
+    w.ask(.{ .procs = false, .paused = true }, false);
+    try w.start(null);
+    const clock = @import("../platform/root.zig").clock;
+    const until = clock.now() + 1.2;
+    while (clock.now() < until) try std.testing.expect(w.take() == null);
+    w.ask(.{ .procs = false }, true); // resume: at once
+    const by = clock.now() + 2;
+    var got = false;
+    while (!got and clock.now() < by) got = w.take() != null;
+    try std.testing.expect(got);
 }

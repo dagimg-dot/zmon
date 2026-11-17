@@ -15,6 +15,7 @@ pub const groups = [_]Group{
         .{ .keys = &.{ "Ctrl", "F" }, .what = "Search apps and processes" },
         .{ .keys = &.{ "Ctrl", "," }, .what = "Settings" },
         .{ .keys = &.{ "Ctrl", "?" }, .what = "Keyboard shortcuts" },
+        .{ .keys = &.{ "Ctrl", "Shift", "P" }, .what = "Pause or resume updates" },
         .{ .keys = &.{ "Ctrl", "Q" }, .what = "Quit" },
     } },
     .{ .title = "Pages", .items = &.{

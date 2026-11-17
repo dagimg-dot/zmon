@@ -67,6 +67,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
         ui.text(c, c.print("{d} open", .{n}), .{ .size = 12.5, .color = k.secondary });
     }
     search(c, s);
+    if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P" })) s.togglePause();
     if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I" })) s.details_open = !s.details_open;
     if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }

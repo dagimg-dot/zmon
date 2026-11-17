@@ -49,6 +49,9 @@ pub const Want = struct {
     kernel_threads: bool = true,
     /// The device page's costlier readings (each disk, interface, clock...).
     devices: core.devices.DeviceWant = .{},
+    /// Milliseconds between samples, and whether sampling is paused.
+    interval_ms: u16 = 1000,
+    paused: bool = false,
     /// A port being searched for (0: none): who holds it is looked up.
     port: u16 = 0,
     /// The process the details pane shows (0: none), and when it started.
@@ -94,6 +97,8 @@ pub const Sampler = struct {
     machine_buf: [128]u8 = undefined,
     machine_len: usize = 0,
     prev_time: f64 = 0,
+    /// Up to when history has entries (one a second).
+    history_time: f64 = 0,
     prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
     next_prev: std.AutoHashMapUnmanaged(i32, Prev) = .empty,
     prev_cpu: std.ArrayList(Cpu) = .empty,
@@ -156,6 +161,28 @@ pub const Sampler = struct {
         s.threads = l.threads;
         s.prev_time = now;
         s.samples += 1;
+        // History keeps one entry a second whatever the sampling speed: a
+        // faster speed adds a value once a second has gone by, a slower one
+        // repeats it for each second between (a pause isn't filled in).
+        const pushes = s.historyPushes(now);
+        for (0..pushes) |_| s.pushHistory();
+    }
+
+    /// How many seconds of history this sample stands for.
+    fn historyPushes(s: *Sampler, now: f64) usize {
+        if (s.history_time == 0) {
+            s.history_time = now;
+            return 1;
+        }
+        const whole: usize = @intFromFloat(@max(0, @floor(now - s.history_time)));
+        if (whole == 0) return 0;
+        s.history_time += @floatFromInt(whole);
+        // A slower speed is a few seconds; a long gap is a pause, left out.
+        const most: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(s.want.interval_ms)) / 1000));
+        return @min(whole, @max(1, most));
+    }
+
+    fn pushHistory(s: *Sampler) void {
         s.history.cpu.push(s.cpu_pct);
         s.history.memory.push(if (s.memory.total > 0)
             @as(f32, @floatFromInt(s.memory.used())) * 100 / @as(f32, @floatFromInt(s.memory.total))
@@ -416,6 +443,18 @@ test "rates come from the last sample of the same process, never a reused pid's"
     var after_gap = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 900 }};
     s.applyRates(&after_gap, 1, true); // the list was closed: earlier ticks are stale
     try std.testing.expectEqual(@as(f32, 0), after_gap[0].cpu);
+}
+
+test "history keeps one entry a second at any sampling speed" {
+    var s = Sampler.init(std.testing.allocator, std.testing.io);
+    defer s.deinit();
+    s.want.interval_ms = 500;
+    try std.testing.expectEqual(@as(usize, 1), s.historyPushes(100.0));
+    try std.testing.expectEqual(@as(usize, 0), s.historyPushes(100.5)); // half a second: none yet
+    try std.testing.expectEqual(@as(usize, 1), s.historyPushes(101.0));
+    s.want.interval_ms = 5000;
+    try std.testing.expectEqual(@as(usize, 5), s.historyPushes(106.0)); // five seconds stand for five entries
+    try std.testing.expectEqual(@as(usize, 5), s.historyPushes(400.0)); // a pause isn't filled in
 }
 
 test "a snapshot owns its names, so the sampler can drop its own" {

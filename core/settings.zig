@@ -11,6 +11,19 @@ pub const Appearance = enum { system, light, dark };
 /// (top, Activity Monitor).
 pub const CpuScale = enum { machine, core };
 
+/// How often zmon samples the machine, in milliseconds. History keeps one
+/// entry a second whatever the speed, so graphs span what they say.
+pub const Interval = enum(u16) {
+    half = 500,
+    one = 1000,
+    two = 2000,
+    five = 5000,
+
+    pub fn seconds(i: Interval) f64 {
+        return @as(f64, @floatFromInt(@backingInt(i))) / 1000;
+    }
+};
+
 /// How much history the graphs show.
 pub const Span = enum(u16) {
     minute = 60,
@@ -65,6 +78,7 @@ pub const Settings = struct {
     light_theme: ThemeId = .init("graphite-light"),
     colored_graphs: bool = true,
     span: Span = .minute,
+    interval: Interval = .one,
     /// The kernel's own threads: nearly half the list on most machines,
     /// none of them a person can end. Off unless asked for.
     show_kernel_threads: bool = false,
@@ -86,6 +100,7 @@ pub const Settings = struct {
         if (toml.getString(entries, "appearance.light_theme")) |v| if (validId(v)) s.light_theme.set(v);
         s.colored_graphs = boolean(entries, "graphs.colored") orelse s.colored_graphs;
         if (number(entries, "graphs.history")) |n| s.span = std.enums.fromInt(Span, n) orelse s.span;
+        if (number(entries, "graphs.update_ms")) |n| s.interval = std.enums.fromInt(Interval, n) orelse s.interval;
         s.show_kernel_threads = boolean(entries, "processes.kernel_threads") orelse s.show_kernel_threads;
         s.confirm_end_task = boolean(entries, "processes.confirm_end_task") orelse s.confirm_end_task;
         if (toml.getString(entries, "processes.cpu_scale")) |v| s.cpu_scale = std.meta.stringToEnum(CpuScale, v) orelse s.cpu_scale;
@@ -108,6 +123,7 @@ pub const Settings = struct {
             \\[graphs]
             \\colored = {}
             \\history = {d}
+            \\update_ms = {d}
             \\
             \\[processes]
             \\kernel_threads = {}
@@ -125,6 +141,7 @@ pub const Settings = struct {
             s.light_theme.slice(),
             s.colored_graphs,
             s.span.seconds(),
+            @backingInt(s.interval),
             s.show_kernel_threads,
             s.confirm_end_task,
             s.cpu_scale,
@@ -167,6 +184,7 @@ test "settings round-trip through their file" {
         .light_theme = .init("gruvbox-light"),
         .colored_graphs = false,
         .span = .five_minutes,
+        .interval = .two,
         .show_kernel_threads = true,
         .confirm_end_task = false,
         .cpu_scale = .core,
@@ -183,6 +201,7 @@ test "settings round-trip through their file" {
     try std.testing.expectEqualStrings("gruvbox-light", back.light_theme.slice());
     try std.testing.expect(!back.colored_graphs);
     try std.testing.expectEqual(Span.five_minutes, back.span);
+    try std.testing.expectEqual(Interval.two, back.interval);
     try std.testing.expect(back.show_kernel_threads and !back.confirm_end_task);
     try std.testing.expectEqual(TextSize.larger, back.text_size);
     try std.testing.expectEqual(CpuScale.core, back.cpu_scale);

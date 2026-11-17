@@ -39,7 +39,9 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     var b: [2][32]u8 = undefined;
     const r = ui.div(c).row().wFull().px(8).pt(10);
     defer r.end();
-    ui.text(c, c.print("Up {s} · load {d:.1}", .{ fmt.duration(&b[0], s.sample.uptime), s.sample.load[0] }), .{ .size = 11, .color = k.tertiary });
+    if (s.paused) {
+        ui.text(c, "Paused · Ctrl+Shift+P resumes", .{ .size = 11, .weight = .semibold, .color = k.accent });
+    } else ui.text(c, c.print("Up {s} · load {d:.1}", .{ fmt.duration(&b[0], s.sample.uptime), s.sample.load[0] }), .{ .size = 11, .color = k.tertiary });
 }
 
 /// The narrow sidebar: the same pages and devices, icons and live values only.

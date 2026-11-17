@@ -83,6 +83,16 @@ fn graphs(c: *ui.Context, s: *State, k: theme.Colors) void {
     defer g.end();
     if (row.switchRow(c, k, "colored", "Coloured graphs", "Each device's graph in its own colour from the theme. Off, every graph uses the text colour.", true, &s.settings.colored_graphs)) s.save();
     {
+        const r = row.begin(c, k, "interval", "Update every", "How often zmon reads the machine. Faster costs a little more; graphs span the same time either way.", false);
+        defer r.end();
+        const speeds = [_]core.settings.Interval{ .half, .one, .two, .five };
+        var i: usize = std.mem.indexOfScalar(core.settings.Interval, &speeds, s.settings.interval) orelse 1;
+        if (controls.segmented(c, k, "interval-choice", &.{ "0.5 s", "1 s", "2 s", "5 s" }, &i)) {
+            s.settings.interval = speeds[i];
+            s.save();
+        }
+    }
+    {
         const r = row.begin(c, k, "span", "Graphs show the last", "", false);
         defer r.end();
         const spans = [_]core.settings.Span{ .minute, .five_minutes, .hour };

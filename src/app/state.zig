@@ -60,6 +60,8 @@ pub const State = struct {
     /// pid, app groups by their root's pid.
     proc_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
     group_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
+    /// Sampling is paused: every figure holds until resumed. Not saved.
+    paused: bool = false,
     /// The Background section of Apps is open.
     background_open: bool = false,
     /// The details pane is open beside the list.
@@ -251,6 +253,11 @@ pub const State = struct {
         s.users.deinit();
     }
 
+    /// Pauses sampling, or resumes it.
+    pub fn togglePause(s: *State) void {
+        s.paused = !s.paused;
+    }
+
     /// Shows `snap` and samples no more: tests feed made-up processes, so
     /// what they check doesn't move between key presses.
     pub fn useSample(s: *State, snap: *const system.sampler.Snapshot) void {
@@ -276,6 +283,8 @@ pub const State = struct {
             .procs = s.onList() or s.confirm or s.quit_watch != null,
             .kernel_threads = s.settings.show_kernel_threads,
             .devices = .{ .cpu = s.page == .cpu, .disks = s.page == .disk, .network = s.page == .network },
+            .interval_ms = @backingInt(s.settings.interval),
+            .paused = s.paused,
         };
         if (s.detailTarget()) |d| {
             want.detail_pid = d.pid;
@@ -289,18 +298,20 @@ pub const State = struct {
             !std.meta.eql(want.devices, s.asked.devices);
         const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads or
             !std.meta.eql(want.devices, s.asked.devices);
+        // A new speed or a resume takes effect at once.
+        const timing = want.interval_ms != s.asked.interval_ms or want.paused != s.asked.paused;
         const new_detail = want.detail_pid != s.asked.detail_pid or want.detail_start != s.asked.detail_start or
             (want.port != s.asked.port and want.port != 0);
-        s.worker.ask(want, (stale and changed) or (new_detail and (want.detail_pid != 0 or want.port != 0)));
+        s.worker.ask(want, timing or (stale and changed) or (new_detail and (want.detail_pid != 0 or want.port != 0)));
         s.asked = want;
         var wait: f64 = 1.0; // a sample wakes the view itself; this is a fallback
         if (!s.worker.running()) {
             const detail_due = (want.detail_pid != 0 or want.port != 0) and new_detail;
-            if (s.sample.samples == 0 or now >= s.next_sample or stale or detail_due) {
+            if (!s.paused and (s.sample.samples == 0 or now >= s.next_sample or stale or detail_due)) {
                 s.worker.step(); // `now` only schedules: rates use the machine's clock
                 // On the second, not a second after each late frame; soon when the
                 // sample has nothing to measure rates against; after a stall, from now.
-                const period: f64 = if (s.worker.ratesPending()) 0.3 else 1.0;
+                const period: f64 = if (s.worker.ratesPending()) 0.3 else s.settings.interval.seconds();
                 s.next_sample = if (s.next_sample > 0 and now - s.next_sample < period) s.next_sample + period else now + period;
             }
             wait = s.next_sample - now;

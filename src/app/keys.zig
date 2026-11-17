@@ -41,6 +41,7 @@ pub fn handle(c: *ui.Context, s: *State) void {
 
     if (ctrl(c, 'q') or ctrl(c, 'w')) c.close_request = true;
     if (ctrl(c, ',')) s.open(.settings);
+    if (c.shortcut(.{ .key = 'p', .cmd = true, .shift = true })) s.togglePause();
     if (ctrl(c, 'i') and s.onList()) s.details_open = !s.details_open;
     if (c.shortcut(.{ .key = '?', .cmd = true, .shift = true }) or ctrl(c, '?') or c.shortcut(.{ .key = '/', .cmd = true, .shift = true }) or plain(c, .f1))
         s.shortcuts_open = true;

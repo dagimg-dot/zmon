@@ -1015,3 +1015,22 @@ test "odd processes (a parent loop, empty names, an unknown user) draw every pag
         try pressEverything(&t, &state);
     }
 }
+
+test "Ctrl+Shift+P pauses every figure and resumes them" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.advance(1.5);
+    try std.testing.expect(t.shortcut(.{ .key = 'p', .cmd = true, .shift = true }));
+    try std.testing.expect(state.paused);
+    const held = state.sample.samples;
+    t.advance(2.5); // a few seconds pass: no sample is taken
+    try std.testing.expectEqual(held, state.sample.samples);
+    try std.testing.expect(t.containsText("Paused"));
+    try std.testing.expect(t.shortcut(.{ .key = 'p', .cmd = true, .shift = true }));
+    t.advance(1.5);
+    try std.testing.expect(state.sample.samples > held);
+}

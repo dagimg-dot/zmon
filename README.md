@@ -14,7 +14,7 @@ A system monitor for Linux, written in Zig and drawn natively by [nanoui](https:
   - Network: each interface's rates, address and link speed.
   - Battery: charge, power drawn and time left.
 - **Themes:** 34 to choose from, Graphite Dark and Light by default and 32 ported from vicinae (Catppuccin, Nord, Gruvbox, Rosé Pine, Tokyo Night and more), one for dark and one for light, following the desktop or fixed. Your own go in `~/.local/share/zmon/themes/`; see `THEMES.md`.
-- **Settings:** appearance and the theme gallery, coloured or plain graphs, a minute, five minutes or an hour of history, kernel threads shown or hidden, CPU as a share of the whole machine or of one core, and whether End task asks first. Saved in `~/.config/zmon/settings.toml`.
+- **Settings:** appearance and the theme gallery, coloured or plain graphs, an update every 0.5, 1, 2 or 5 seconds, a minute, five minutes or an hour of history, kernel threads shown or hidden, CPU as a share of the whole machine or of one core, and whether End task asks first. Saved in `~/.config/zmon/settings.toml`.
 
 History, startup items, a disk analyzer and a floating overlay are planned.
 
@@ -27,6 +27,7 @@ Every page, list and action has a key. Ctrl+? (or F1) shows them all in zmon.
 | Ctrl+F | Search apps and processes |
 | Ctrl+, | Settings |
 | Ctrl+? or F1 | Keyboard shortcuts |
+| Ctrl+Shift+P | Pause or resume updates |
 | Ctrl+Q | Quit |
 | Ctrl+1, Ctrl+2 | Apps, Processes |
 | Ctrl+3 to Ctrl+6 | CPU, Memory, Disk, Network |
