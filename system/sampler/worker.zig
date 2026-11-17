@@ -162,7 +162,11 @@ const WantCell = struct {
     /// One writer only: the app's thread.
     fn set(c: *WantCell, want: root.Want) void {
         _ = c.seq.fetchAdd(1, .acq_rel);
-        c.flags.store(@as(u32, @intFromBool(want.procs)) | @as(u32, @intFromBool(want.kernel_threads)) << 1, .release);
+        c.flags.store(@as(u32, @intFromBool(want.procs)) |
+            @as(u32, @intFromBool(want.kernel_threads)) << 1 |
+            @as(u32, @intFromBool(want.devices.cpu)) << 2 |
+            @as(u32, @intFromBool(want.devices.disks)) << 3 |
+            @as(u32, @intFromBool(want.devices.network)) << 4, .release);
         c.pid.store(want.detail_pid, .release);
         c.start.store(want.detail_start, .release);
         _ = c.seq.fetchAdd(1, .acq_rel);
@@ -179,6 +183,7 @@ const WantCell = struct {
             const want: root.Want = .{
                 .procs = flags & 1 != 0,
                 .kernel_threads = flags & 2 != 0,
+                .devices = .{ .cpu = flags & 4 != 0, .disks = flags & 8 != 0, .network = flags & 16 != 0 },
                 .detail_pid = c.pid.load(.acquire),
                 .detail_start = c.start.load(.acquire),
             };

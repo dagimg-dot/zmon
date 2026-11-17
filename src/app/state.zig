@@ -246,6 +246,7 @@ pub const State = struct {
         var want: system.sampler.Want = .{
             .procs = s.onList() or s.confirm or s.quit_watch != null,
             .kernel_threads = s.settings.show_kernel_threads,
+            .devices = .{ .cpu = s.page == .cpu, .disks = s.page == .disk, .network = s.page == .network },
         };
         if (s.detailTarget()) |d| {
             want.detail_pid = d.pid;
@@ -253,8 +254,11 @@ pub const State = struct {
         }
         // Opening a list, or selecting another process with the details
         // open, reads at once rather than at the next second.
-        const stale = want.procs and !s.sample.procs_read;
-        const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads;
+        // A device page whose readings the last sample didn't take counts as stale too.
+        const stale = (want.procs and !s.sample.procs_read) or
+            !std.meta.eql(want.devices, s.asked.devices);
+        const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads or
+            !std.meta.eql(want.devices, s.asked.devices);
         const new_detail = want.detail_pid != s.asked.detail_pid or want.detail_start != s.asked.detail_start;
         s.worker.ask(want, (stale and changed) or (new_detail and want.detail_pid != 0));
         s.asked = want;

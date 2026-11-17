@@ -11,7 +11,7 @@ pub fn read(io: std.Io) [2]u64 {
 
 /// A whole disk, not a partition or a virtual device: sda, vda, nvme0n1,
 /// mmcblk0, but not sda1, nvme0n1p1, loop0, dm-0, zram0.
-fn wholeDisk(name: []const u8) bool {
+pub fn wholeDisk(name: []const u8) bool {
     if (name.len < 3) return false;
     if (std.mem.startsWith(u8, name, "nvme") or std.mem.startsWith(u8, name, "mmcblk"))
         return std.mem.indexOfScalar(u8, name, 'p') == null;

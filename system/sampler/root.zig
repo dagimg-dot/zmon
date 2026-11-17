@@ -35,6 +35,9 @@ pub const History = struct {
     disk_write: Ring(f32) = .{},
     net_in: Ring(f32) = .{},
     net_out: Ring(f32) = .{},
+    /// Percent of swap in use, and of the battery's charge (0 without one).
+    swap: Ring(f32) = .{},
+    battery: Ring(f32) = .{},
 };
 
 const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
@@ -44,6 +47,8 @@ const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
 pub const Want = struct {
     procs: bool = true,
     kernel_threads: bool = true,
+    /// The device page's costlier readings (each disk, interface, clock...).
+    devices: core.devices.DeviceWant = .{},
     /// The process the details pane shows (0: none), and when it started.
     detail_pid: i32 = 0,
     detail_start: u64 = 0,
@@ -91,6 +96,9 @@ pub const Sampler = struct {
     prev_disk: [2]u64 = .{ 0, 0 },
     prev_net: [2]u64 = .{ 0, 0 },
     interfaces: backend.network.Interfaces = .{},
+    devices_reader: backend.devices.Reader = .{},
+    /// Each disk, filesystem, interface, sensor, the battery and pressure.
+    devices: core.devices.Devices = .{},
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io) Sampler {
         var s: Sampler = .{
@@ -136,6 +144,7 @@ pub const Sampler = struct {
         s.memory = backend.memory.read(s.io);
         s.collectDisk(dt, first);
         s.collectNet(dt, first);
+        s.devices_reader.read(s.io, &s.devices, s.want.devices, dt, now, &s.interfaces);
         const l = backend.load.read(s.io);
         s.load = l.avg;
         s.uptime = l.uptime;
@@ -151,6 +160,11 @@ pub const Sampler = struct {
         s.history.disk_write.push(s.disk_write_bps);
         s.history.net_in.push(s.net_in_bps);
         s.history.net_out.push(s.net_out_bps);
+        s.history.swap.push(if (s.memory.swap_total > 0)
+            @as(f32, @floatFromInt(s.memory.swapUsed())) * 100 / @as(f32, @floatFromInt(s.memory.swap_total))
+        else
+            0);
+        s.history.battery.push(s.devices.battery.percent);
     }
 
     /// The process with this pid in the current sample.
@@ -251,6 +265,7 @@ pub const Snapshot = struct {
     detail: ?core.Details = null,
     /// Clock ticks a second, to turn start times into ages.
     hz: u64 = 100,
+    devices: core.devices.Devices = .{},
     history: History = .{},
     machine_buf: [128]u8 = undefined,
     machine_len: usize = 0,
@@ -305,6 +320,7 @@ pub const Snapshot = struct {
         sn.samples = s.samples;
         sn.procs_read = s.procs_read;
         sn.hz = s.hz;
+        sn.devices = s.devices;
         sn.detail = null;
         if (s.detail) |d| {
             var c = d;

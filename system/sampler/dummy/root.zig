@@ -94,3 +94,11 @@ pub const details = struct {
         return null;
     }
 };
+
+pub const devices = struct {
+    pub const Reader = struct {
+        pub fn read(r: *Reader, io: std.Io, out: *core.devices.Devices, want: core.devices.DeviceWant, dt: f64, now: f64, interfaces: *network.Interfaces) void {
+            _ = .{ r, io, out, want, dt, now, interfaces };
+        }
+    };
+};
