@@ -33,6 +33,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     const list = table.box(c, "apps-list");
     defer list.div.end();
     s.list_id = list.id;
+    s.list_hovered = list.hovered;
     if (s.app_rows.len == 0) {
         const query = s.search.text();
         return table.empty(c, k, if (query.len > 0) c.print("No app matches \"{s}\".", .{query}) else "No apps are open.");
@@ -82,7 +83,7 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns,
     }
     if (it.double_clicked and g.members.len > 1) s.pending_toggle = g.root;
     const ink = table.ink(k, sel);
-    const m: table.Metrics = .{ .cpu = g.cpu, .memory = g.memory, .disk = g.disk_bps, .disk_known = true, .threads = g.threads };
+    const m: table.Metrics = .{ .cpu = s.cpuShown(g.cpu), .memory = g.memory, .disk = g.disk_bps, .disk_known = true, .threads = g.threads };
     table.describeRow(c, r, if (g.members.len > 1) c.print("{s}, {d} processes, {s}", .{ g.name, g.members.len, if (open) "open" else "closed" }) else g.name, m, sel);
     {
         const name = table.cell(c, columns[0], table.row_h).gap(6);
@@ -138,7 +139,7 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, 
         c.changed = true;
     }
     const ink = table.ink(k, sel);
-    const m: table.Metrics = .{ .cpu = p.cpu, .memory = p.memory, .disk = p.disk_bps, .disk_known = p.io_known, .threads = p.threads };
+    const m: table.Metrics = .{ .cpu = s.cpuShown(p.cpu), .memory = p.memory, .disk = p.disk_bps, .disk_known = p.io_known, .threads = p.threads };
     table.describeRow(c, r, c.print("{s}, process {d}", .{ p.name, p.pid }), m, sel);
     {
         const name = table.cell(c, columns[0], table.row_h).gap(6).pl(46);

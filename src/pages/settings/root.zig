@@ -102,6 +102,15 @@ fn processes(c: *ui.Context, s: *State, k: theme.Colors) void {
         s.save();
         s.rebuild();
     }
+    {
+        const r = row.begin(c, k, "cpu-scale", "CPU in the lists", "A share of the whole machine, or of one core, where a busy app can pass 100%.", false);
+        defer r.end();
+        var i: usize = @backingInt(s.settings.cpu_scale);
+        if (controls.segmented(c, k, "cpu-scale-choice", &.{ "Whole machine", "One core" }, &i)) {
+            s.settings.cpu_scale = @fromBackingInt(@intCast(i));
+            s.save();
+        }
+    }
     if (row.switchRow(c, k, "confirm", "Ask before ending a task", "End task asks first, so an app with unsaved work isn't closed by a stray click.", false, &s.settings.confirm_end_task)) s.save();
 }
 

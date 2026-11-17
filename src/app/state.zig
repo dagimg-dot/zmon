@@ -49,6 +49,17 @@ pub const State = struct {
     gpa: std.mem.Allocator,
     /// Account names, for the User column.
     users: system.users.Users,
+    /// The pointer was over the list in the last frame.
+    list_hovered: bool = false,
+    /// When a list key was last pressed (the view's clock).
+    list_key_time: f64 = -100,
+    /// The lists keep their order while the pointer is on them or a key
+    /// moved in them lately, so a row doesn't jump away as it is clicked.
+    hold_order: bool = false,
+    /// Each row's place in the last order that wasn't held: process rows by
+    /// pid, app groups by their root's pid.
+    proc_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
+    group_rank: std.AutoHashMapUnmanaged(i32, u32) = .empty,
     /// The Background section of Apps is open.
     background_open: bool = false,
     /// The details pane is open beside the list.
@@ -225,6 +236,8 @@ pub const State = struct {
         s.toaster.deinit();
         s.search.deinit();
         s.expanded.deinit(s.gpa);
+        s.proc_rank.deinit(s.gpa);
+        s.group_rank.deinit(s.gpa);
         s.built.deinit();
         s.icons.deinit();
         s.index.deinit();
@@ -242,6 +255,7 @@ pub const State = struct {
     /// without the thread, takes one when it is time), and returns how soon
     /// the view should look again.
     pub fn tick(s: *State, now: f64) f32 {
+        s.hold_order = s.onList() and (s.list_hovered or now - s.list_key_time < 3);
         // The process list is read only while something shows or watches it.
         var want: system.sampler.Want = .{
             .procs = s.onList() or s.confirm or s.quit_watch != null,
@@ -289,6 +303,12 @@ pub const State = struct {
         const procs = s.sample.procs;
         s.groups = apps.group(a, procs, &s.index) catch &.{};
         std.mem.sort(apps.Group, s.groups, GroupOrder{ .o = s.app_order }, GroupOrder.less);
+        if (s.hold_order) {
+            std.mem.sort(apps.Group, s.groups, &s.group_rank, heldGroup);
+        } else {
+            s.group_rank.clearRetainingCapacity();
+            for (s.groups, 0..) |g, i| s.group_rank.put(s.gpa, g.root, @intCast(i)) catch {};
+        }
         s.owner = a.alloc(u32, procs.len) catch &.{};
         if (s.owner.len == procs.len) {
             @memset(s.owner, none);
@@ -432,8 +452,32 @@ pub const State = struct {
             try rows.append(a, @intCast(i));
         }
         std.mem.sort(u32, rows.items, ProcOrder{ .o = s.proc_order, .procs = procs, .users = &s.users }, ProcOrder.less);
+        if (s.hold_order) {
+            std.mem.sort(u32, rows.items, HeldProc{ .procs = procs, .rank = &s.proc_rank }, HeldProc.less);
+        } else {
+            s.proc_rank.clearRetainingCapacity();
+            for (rows.items, 0..) |r, i| s.proc_rank.put(s.gpa, procs[r].pid, @intCast(i)) catch {};
+        }
         return rows.items;
     }
+
+    /// Held, groups keep their last place; a new one goes after them (a stable
+    /// sort keeps the new ones in their sorted order among themselves).
+    fn heldGroup(rank: *const std.AutoHashMapUnmanaged(i32, u32), x: apps.Group, y: apps.Group) bool {
+        const kx = @as(u64, rank.get(x.root) orelse std.math.maxInt(u32));
+        const ky = @as(u64, rank.get(y.root) orelse std.math.maxInt(u32));
+        return kx < ky;
+    }
+
+    const HeldProc = struct {
+        procs: []const core.Proc,
+        rank: *const std.AutoHashMapUnmanaged(i32, u32),
+        fn less(h: HeldProc, x: u32, y: u32) bool {
+            const kx = @as(u64, h.rank.get(h.procs[x].pid) orelse std.math.maxInt(u32));
+            const ky = @as(u64, h.rank.get(h.procs[y].pid) orelse std.math.maxInt(u32));
+            return kx < ky;
+        }
+    };
 
     fn busier(procs: []const core.Proc, x: u32, y: u32) bool {
         if (procs[x].cpu != procs[y].cpu) return procs[x].cpu > procs[y].cpu;
@@ -579,6 +623,14 @@ pub const State = struct {
     /// The name of the account `uid`, or its number when it has none.
     pub fn userName(s: *const State, buf: []u8, uid: u32) []const u8 {
         return s.users.name(uid) orelse std.fmt.bufPrint(buf, "{d}", .{uid}) catch "";
+    }
+
+    /// A process's or app's CPU as the lists show it: a share of one core
+    /// as sampled, or of the whole machine when Settings says so.
+    pub fn cpuShown(s: *const State, of_one_core: f32) f32 {
+        if (s.settings.cpu_scale == .core) return of_one_core;
+        const cores: f32 = @floatFromInt(@max(1, s.sample.cores.len));
+        return of_one_core / cores;
     }
 
     /// The pid selected on the page shown.

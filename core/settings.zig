@@ -6,6 +6,11 @@ const toml = @import("theme/toml.zig");
 
 pub const Appearance = enum { system, light, dark };
 
+/// How the lists show a process's CPU: as a share of the whole machine
+/// (GNOME, Task Manager), or of one core, so a busy process can pass 100%
+/// (top, Activity Monitor).
+pub const CpuScale = enum { machine, core };
+
 /// How much history the graphs show.
 pub const Span = enum(u16) {
     minute = 60,
@@ -62,6 +67,7 @@ pub const Settings = struct {
     span: Span = .minute,
     show_kernel_threads: bool = true,
     confirm_end_task: bool = true,
+    cpu_scale: CpuScale = .machine,
     text_size: TextSize = .default,
     /// Stronger secondary text and lines than the theme draws.
     more_contrast: bool = false,
@@ -80,6 +86,7 @@ pub const Settings = struct {
         if (number(entries, "graphs.history")) |n| s.span = std.enums.fromInt(Span, n) orelse s.span;
         s.show_kernel_threads = boolean(entries, "processes.kernel_threads") orelse s.show_kernel_threads;
         s.confirm_end_task = boolean(entries, "processes.confirm_end_task") orelse s.confirm_end_task;
+        if (toml.getString(entries, "processes.cpu_scale")) |v| s.cpu_scale = std.meta.stringToEnum(CpuScale, v) orelse s.cpu_scale;
         if (toml.getString(entries, "accessibility.text_size")) |v| s.text_size = std.meta.stringToEnum(TextSize, v) orelse s.text_size;
         s.more_contrast = boolean(entries, "accessibility.more_contrast") orelse s.more_contrast;
         s.reduce_motion = boolean(entries, "accessibility.reduce_motion") orelse s.reduce_motion;
@@ -103,6 +110,7 @@ pub const Settings = struct {
             \\[processes]
             \\kernel_threads = {}
             \\confirm_end_task = {}
+            \\cpu_scale = "{t}"
             \\
             \\[accessibility]
             \\text_size = "{t}"
@@ -117,6 +125,7 @@ pub const Settings = struct {
             s.span.seconds(),
             s.show_kernel_threads,
             s.confirm_end_task,
+            s.cpu_scale,
             s.text_size,
             s.more_contrast,
             s.reduce_motion,
@@ -158,6 +167,7 @@ test "settings round-trip through their file" {
         .span = .five_minutes,
         .show_kernel_threads = false,
         .confirm_end_task = false,
+        .cpu_scale = .core,
         .text_size = .larger,
         .more_contrast = true,
         .reduce_motion = true,
@@ -173,6 +183,7 @@ test "settings round-trip through their file" {
     try std.testing.expectEqual(Span.five_minutes, back.span);
     try std.testing.expect(!back.show_kernel_threads and !back.confirm_end_task);
     try std.testing.expectEqual(TextSize.larger, back.text_size);
+    try std.testing.expectEqual(CpuScale.core, back.cpu_scale);
     try std.testing.expect(back.more_contrast and back.reduce_motion);
     s = back;
 }

@@ -27,6 +27,9 @@ pub fn main(init: nanoui.Init) !void {
         .icon = icon.png,
         .width = 1180,
         .height = 760,
+        // Below this the lists' fixed columns leave the names no room.
+        .min_width = 860,
+        .min_height = 520,
         .theme = theme.uiTheme(theme.colors(state.theme(state.isDark(nanoui.isDark())), .{})),
         .content = .{ .view = .init(&state, app_view.view) },
     });

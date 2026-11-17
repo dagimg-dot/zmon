@@ -81,7 +81,10 @@ pub fn header(c: *ui.Context, k: theme.Colors, columns: []const Column, sorted: 
 /// A cell of `col`'s width; end it after drawing its content.
 pub fn cell(c: *ui.Context, col: Column, h: f32) ui.Div {
     var d = ui.div(c).row().h(h).itemsCenter().px(6).clip();
-    d = if (col.width) |w| d.w(w) else d.grow().w(0);
+    // The name starts at its content's width and gives way to the fixed
+    // columns: text that may be cut is measured against its parent, so a
+    // zero-width start would cut it to nothing.
+    d = if (col.width) |w| d.w(w) else d.grow().minW(0);
     if (col.right) d = d.justifyEnd();
     return d;
 }
@@ -148,14 +151,14 @@ pub fn ink(k: theme.Colors, selected: bool) Ink {
 
 /// The box a list sits in, one Tab stop for the whole list as a grid is:
 /// Tab reaches it once and the keys move inside it. End `div` after the list.
-pub const Box = struct { div: ui.Div, id: u64 };
+pub const Box = struct { div: ui.Div, id: u64, hovered: bool };
 
 pub fn box(c: *ui.Context, key: []const u8) Box {
     ui.key(c, key);
     // Inset by the ring's width and clipped, so rows never paint over the ring.
     const d = ui.div(c).column().wFull().grow().h(0).p(2).rounded(8).clip();
     const it = c.interact(d.index, .{ .focusable = true });
-    return .{ .div = d, .id = it.id };
+    return .{ .div = d, .id = it.id, .hovered = it.hovered };
 }
 
 /// Opens a virtualized list of `count` rows, scrolled so that row `reveal`
@@ -182,8 +185,8 @@ pub fn programNote(name: []const u8, program: []const u8) ?[]const u8 {
 
 /// A process's name, with its program after it, quieter, when that adds something.
 pub fn processName(c: *ui.Context, i: Ink, name: []const u8, program: []const u8, strong: bool) void {
-    ui.text(c, name, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = i.text });
-    if (programNote(name, program)) |note| ui.text(c, note, .{ .size = 11.5, .color = i.faint });
+    ui.text(c, name, .{ .size = 13, .weight = if (strong) .semibold else .regular, .color = i.text, .truncate = .ellipsis });
+    if (programNote(name, program)) |note| ui.text(c, note, .{ .size = 11.5, .color = i.faint, .truncate = .ellipsis });
 }
 
 /// A line in the middle of an empty list.

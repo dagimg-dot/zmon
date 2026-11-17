@@ -35,6 +35,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     const list = table.box(c, "processes-list");
     defer list.div.end();
     s.list_id = list.id;
+    s.list_hovered = list.hovered;
     if (s.proc_rows.len == 0) {
         const query = s.search.text();
         return table.empty(c, k, if (query.len > 0) c.print("No process matches \"{s}\".", .{query}) else "No processes.");
@@ -73,7 +74,7 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, 
         c.changed = true;
     }
     const ink = table.ink(k, sel);
-    const m: table.Metrics = .{ .cpu = p.cpu, .memory = p.memory, .disk = p.disk_bps, .disk_known = p.io_known, .threads = p.threads };
+    const m: table.Metrics = .{ .cpu = s.cpuShown(p.cpu), .memory = p.memory, .disk = p.disk_bps, .disk_known = p.io_known, .threads = p.threads };
     table.describeRow(c, r, c.print("{s}, process {d}", .{ p.name, p.pid }), m, sel);
     {
         const name = table.cell(c, columns[0], table.row_h).gap(8);

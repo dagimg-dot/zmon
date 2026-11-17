@@ -14,9 +14,14 @@ const app_icon = @import("../ui/icon.zig");
 const State = state.State;
 const Page = state.Page;
 
+/// Below this window width the sidebar keeps only its icons and values.
+pub const compact_below = 1000;
+
 pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const side = ui.div(c).column().w(236).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
+    const compact = c.size.w < compact_below;
+    const side = ui.div(c).column().w(if (compact) 76 else 236).hFull().bg(k.panel).px(10).py(10).gap(4).scrollY();
     defer side.end();
+    if (compact) return drawCompact(c, s, k);
     {
         // The icon's corner sits as far from the top as from the left (20), in
         // line with the page icons below it.
@@ -35,6 +40,41 @@ pub fn draw(c: *ui.Context, s: *State, k: theme.Colors) void {
     const r = ui.div(c).row().wFull().px(8).pt(10);
     defer r.end();
     ui.text(c, c.print("Up {s} · load {d:.1}", .{ fmt.duration(&b[0], s.sample.uptime), s.sample.load[0] }), .{ .size = 11, .color = k.tertiary });
+}
+
+/// The narrow sidebar: the same pages and devices, icons and live values only.
+fn drawCompact(c: *ui.Context, s: *State, k: theme.Colors) void {
+    {
+        const head = ui.div(c).row().wFull().pt(10).pb(10).justifyCenter();
+        defer head.end();
+        app_icon.draw(c, 22);
+    }
+    navCompact(c, s, k, .apps, "Apps", "square.grid.2x2", "");
+    navCompact(c, s, k, .processes, "Processes", "waveform.path.ecg", "");
+    section(c, k, "");
+    const smp = s.sample;
+    var b: [4][16]u8 = undefined;
+    navCompact(c, s, k, .cpu, "CPU", "cpu", fmt.own(c.alloc(), fmt.percent(&b[0], smp.cpu_pct)));
+    navCompact(c, s, k, .memory, "Memory", "memorychip", fmt.own(c.alloc(), fmt.percent(&b[1], smp.history.memory.at(smp.history.memory.len -| 1))));
+    navCompact(c, s, k, .disk, "Disk", "internaldrive", "");
+    navCompact(c, s, k, .network, "Network", "network", "");
+    if (smp.devices.battery.present) navCompact(c, s, k, .battery, "Battery", "gauge.with.dots.needle.33percent", c.print("{d:.0}%", .{smp.devices.battery.percent}));
+    ui.spacer(c);
+    navCompact(c, s, k, .settings, "Settings", "gearshape", "");
+}
+
+fn navCompact(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8, value: []const u8) void {
+    ui.key(c, label);
+    const on = s.page == page;
+    const row = ui.div(c).column().wFull().py(7).gap(2).itemsCenter().rounded(8).control().tooltip(label, .{});
+    defer row.end();
+    if (on) _ = row.bg(k.selected) else _ = row.hover(k.hover);
+    const id = c.interact(row.index, .{}).id;
+    s.nav_ids.set(page, id);
+    if (controls.press(c, row, .{ .role = .tab, .label = if (value.len > 0) c.print("{s}, {s}", .{ label, value }) else label, .selected = on })) s.openFromSidebar(page, id);
+    const ink = if (on) k.selected_text else k.text;
+    ui.icon(c, icon, .{ .size = 15, .frame = 20, .color = ink });
+    if (value.len > 0) ui.text(c, value, .{ .size = 10.5, .weight = .semibold, .color = ink, .tabular = true });
 }
 
 fn nav(c: *ui.Context, s: *State, k: theme.Colors, page: Page, label: []const u8, icon: []const u8) void {

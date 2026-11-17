@@ -93,6 +93,7 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool, in_search: bool) void {
         s.moveSelection(-page_rows);
         moved = true;
     }
+    if (moved) s.list_key_time = c.time;
     // Moving from nowhere, or from where a click left the focus, puts it on
     // the list, where the ring shows it.
     if (moved and !in_search) c.focus = s.list_id;

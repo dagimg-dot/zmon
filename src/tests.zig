@@ -726,3 +726,50 @@ test "Background opens under the apps with Right, and closes with Left" {
     try std.testing.expect(!state.background_open);
     try std.testing.expectEqual(closed, state.app_rows.len);
 }
+
+test "a held list keeps its order when its sort would change it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.page = .processes;
+    _ = state.tick(0);
+    if (state.proc_rows.len < 3) return error.SkipZigTest;
+    state.sortBy(.name);
+    var before: [3]i32 = undefined;
+    for (&before, 0..) |*p, i| p.* = state.sample.procs[state.proc_rows[i]].pid;
+    state.hold_order = true; // the pointer is on the list
+    state.proc_order = .{ .key = .memory };
+    state.rebuild();
+    for (before, 0..) |pid, i| try std.testing.expectEqual(pid, state.sample.procs[state.proc_rows[i]].pid);
+    state.hold_order = false; // let go: the new order applies
+    state.rebuild();
+    const procs = state.sample.procs;
+    try std.testing.expect(procs[state.proc_rows[0]].memory >= procs[state.proc_rows[1]].memory);
+}
+
+test "the lists show CPU as a share of the machine unless asked for one core" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    _ = state.tick(0);
+    const cores: f32 = @floatFromInt(@max(1, state.sample.cores.len));
+    try std.testing.expectApproxEqAbs(@as(f32, 200) / cores, state.cpuShown(200), 0.001);
+    state.settings.cpu_scale = .core;
+    try std.testing.expectEqual(@as(f32, 200), state.cpuShown(200));
+}
+
+test "a narrow window keeps the sidebar's pages as icons, still named for the keyboard" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var t: ui.Tester = undefined;
+    try t.init(std.testing.allocator, .init(&state, app_view.view), .{ .width = 880, .height = 560 });
+    defer t.deinit();
+    t.settle(0.3);
+    try std.testing.expect(!t.hasText("Devices")); // no headings, no labels
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena.allocator(), &els);
+    var settings = false;
+    for (els.items) |e| settings = settings or (e.role == .tab and std.mem.eql(u8, e.label, "Settings"));
+    try std.testing.expect(settings);
+}
