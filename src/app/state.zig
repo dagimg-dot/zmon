@@ -377,7 +377,7 @@ pub const State = struct {
         _ = s.built.reset(.retain_capacity);
         const a = s.built.allocator();
         const procs = s.sample.procs;
-        s.groups = apps.group(a, procs, &s.index) catch &.{};
+        s.groups = apps.group(a, procs, &s.index, s.sample.windowList()) catch &.{};
         std.mem.sort(apps.Group, s.groups, GroupOrder{ .o = s.app_order }, GroupOrder.less);
         if (s.hold_order) {
             std.mem.sort(apps.Group, s.groups, &s.group_rank, heldGroup);

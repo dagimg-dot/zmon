@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const core = @import("zmon-core");
 const platform = @import("../platform/root.zig");
+const window = @import("../window/root.zig");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("linux/root.zig"),
@@ -48,6 +49,9 @@ pub const History = struct {
 };
 
 const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
+
+/// Windows kept a sample; a desktop rarely has more.
+const max_windows = 256;
 
 /// What the next sample reads. The process list costs most, so the app asks
 /// for it only while a list (or something watching a process) needs it.
@@ -94,6 +98,9 @@ pub const Sampler = struct {
     rates_pending: bool = false,
     /// The last sample read the process list.
     procs_read: bool = false,
+    /// The windows the compositor shows, by owner, while the lists are read.
+    windows: [max_windows]core.Window = undefined,
+    window_count: u16 = 0,
     /// The details of `want.detail_pid`, in the arena, when it asked for them.
     detail: ?core.Details = null,
     /// Who holds `want.port`.
@@ -155,6 +162,8 @@ pub const Sampler = struct {
         const first = s.samples == 0;
         _ = s.arena.reset(.retain_capacity);
         s.collectProcs(dt, first);
+        // Who owns which window names apps whose program doesn't: read with the lists.
+        s.window_count = if (s.want.procs) @intCast(window.list(s.io, &s.windows)) else 0;
         s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start, s.unitOf(s.want.detail_pid)) else null;
         s.port_holders = if (s.want.port > 0) backend.origin.holders(s.io, s.want.port, backend.process.currentUid(), false) else .{};
         s.collectCpu();
@@ -314,6 +323,8 @@ pub const Snapshot = struct {
     procs_read: bool = false,
     /// The selected process's details, when the app asked for them.
     detail: ?core.Details = null,
+    windows: [max_windows]core.Window = undefined,
+    window_count: u16 = 0,
     /// The port searched for, and who holds it.
     port: u16 = 0,
     port_holders: backend.origin.Holders = .{},
@@ -330,6 +341,10 @@ pub const Snapshot = struct {
 
     pub fn deinit(sn: *Snapshot) void {
         sn.arena.deinit();
+    }
+
+    pub fn windowList(sn: *const Snapshot) []const core.Window {
+        return sn.windows[0..sn.window_count];
     }
 
     /// What the machine is called; "" when nothing says.
@@ -374,6 +389,8 @@ pub const Snapshot = struct {
         sn.samples = s.samples;
         sn.procs_read = s.procs_read;
         sn.hz = s.hz;
+        sn.window_count = s.window_count;
+        @memcpy(sn.windows[0..s.window_count], s.windows[0..s.window_count]);
         sn.devices = s.devices;
         sn.port = s.want.port;
         sn.port_holders = s.port_holders;

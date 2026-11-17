@@ -127,7 +127,8 @@ fn serviceName(a: std.mem.Allocator, name: []const u8) []const u8 {
 /// Builds the groups for one sample: apps first (busiest first), then
 /// background processes, then the kernel's threads. Everything is allocated
 /// from `a`.
-pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group {
+/// `windows`: which process owns which window, when the compositor says.
+pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype, windows: []const core.Window) ![]Group {
     var at = std.AutoHashMapUnmanaged(i32, u32).empty;
     try at.ensureTotalCapacity(a, @intCast(procs.len));
     for (procs, 0..) |p, i| at.putAssumeCapacity(p.pid, @intCast(i));
@@ -138,6 +139,17 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
     const Entry = @TypeOf(index.lookup("").?);
     const entry_of = try a.alloc(?Entry, procs.len);
     for (procs, 0..) |*p, i| entry_of[i] = if (p.kthread) null else visibleEntry(index, p);
+    // A process whose program names no app may own a window that does: an
+    // Electron or Java app started through a script runs as "electron", its
+    // window says "equibop". The window's app id is the entry's file name or
+    // its window class.
+    for (windows) |w| {
+        const i = at.get(w.pid) orelse continue;
+        if (entry_of[i] != null) continue;
+        const id = w.app_id.slice();
+        const e = index.lookupId(id) orelse index.lookup(id) orelse continue;
+        if (!e.hidden and !e.terminal) entry_of[i] = e;
+    }
     // An app's root names an entry its parent doesn't; each process belongs
     // to the nearest root among itself and its ancestors.
     const app_of = try a.alloc(u32, procs.len);
@@ -318,7 +330,7 @@ test "scaffolding is recognised by the kernel's short name, even when the full n
         fake(50, 1, "dbus-broker-launch", "/usr/bin/dbus-broker-launch"),
         fake(60, 50, "dbus-broker", "/usr/bin/dbus-broker"),
     };
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     var broker: ?Group = null;
     for (groups) |g| if (g.root == 60) {
         broker = g;
@@ -351,7 +363,7 @@ test "an app keeps its helpers; scaffolding does not swallow its apps" {
     procs[4].cpu = 30;
     procs[5].cpu = 20;
     procs[7].cpu = 1;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
 
     var browser: ?Group = null;
     var terminal: ?Group = null;
@@ -382,7 +394,7 @@ test "entries that are not meant to be launched make background groups, not apps
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const procs = [_]Proc{ fake(1, 0, "systemd", ""), fake(5, 1, "portal-bin", "/usr/lib/portal-bin") };
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     for (groups) |g| try std.testing.expect(g.kind != .app);
 }
 
@@ -399,7 +411,7 @@ test "a process the kernel starts leads its own group, not the kernel thread's" 
     };
     procs[1].kthread = true;
     procs[2].kthread = true;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     for (groups) |g| {
         if (g.kind == .kernel) continue;
         try std.testing.expect(std.mem.indexOfScalar(u32, g.members, @intCast(for (procs, 0..) |p, i| {
@@ -461,7 +473,7 @@ test "processes are grouped by their unit, whatever started them" {
     procs[1].unit = "user@1000.service";
     procs[7].unit = "docker-0123456789abcdef0123456789abcdef.scope";
     for (&procs, 0..) |*p, i| p.start = i;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     var editor: ?Group = null;
     var docker: ?Group = null;
     var container: ?Group = null;
@@ -503,7 +515,7 @@ test "helpers left in the compositor's unit join the app their parent is in" {
     procs[5].unit = "niri.service";
     procs[7].unit = "tmux-spawn-4772f86e-775f-4b0d-8753-b89049bc7b3d.scope";
     procs[8].unit = "tmux-spawn-565179ff-e1ff-4229-a7d4-239bb8cfe67f.scope";
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     for (groups) |g| {
         if (std.mem.eql(u8, g.name, "Browser")) try std.testing.expectEqual(@as(usize, 3), g.members.len);
         if (std.mem.eql(u8, g.name, "tmux-spawn")) try std.testing.expectEqual(@as(usize, 2), g.members.len);
@@ -542,7 +554,7 @@ test "an app started by a launcher, a terminal or a script is its own app, not t
     procs[11].program = "notes";
     procs[11].unit = "app-flatpak-com.example.Notes-3000.scope";
     for (&procs, 0..) |*p, i| p.start = i;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     const Want = struct { name: []const u8, root: i32, count: usize };
     const want = [_]Want{
         .{ .name = "Launcher", .root = 1000, .count = 2 }, // itself and its index, not Notes
@@ -577,7 +589,7 @@ test "a terminal program is never an app of its own, and a window class doesn't 
         fake(13, 11, "chat", "/home/u/.local/bin/chat"), // a CLI that shares the chat app's window class
     };
     for (&procs, 0..) |*p, i| p.start = i;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     for (groups) |g| {
         try std.testing.expect(!std.mem.eql(u8, g.name, "Neovim"));
         try std.testing.expect(!std.mem.eql(u8, g.name, "Chat"));
@@ -599,7 +611,7 @@ test "a process that left its app's tree but stayed in its scope joins the app" 
     procs[1].unit = "app-com.example.Chat-100.scope";
     procs[2].unit = "app-com.example.Chat-100.scope";
     for (&procs, 0..) |*p, i| p.start = i;
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     var chats: usize = 0;
     for (groups) |g| if (std.mem.eql(u8, g.name, "Chat")) {
         chats += 1;
@@ -620,6 +632,35 @@ test "a scope's id names an app only when it is a launcher entry's file name" {
         fake(500, 1, "bash", "/usr/bin/bash"),
     };
     procs[1].unit = "app-niri-sh-500.scope";
-    const groups = try build(arena.allocator(), &procs, &ix);
+    const groups = try build(arena.allocator(), &procs, &ix, &.{});
     for (groups) |g| try std.testing.expect(g.kind != .app);
+}
+
+test "a process its program doesn't name is the app its window names" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("equibop", "[Desktop Entry]\nType=Application\nName=Equibop\nExec=equibop %U\nStartupWMClass=equibop\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(900, 1, "launcher", "/usr/bin/launcher"),
+        // The script exec'd Electron: nothing in the process says "equibop".
+        fake(1000, 900, "electron", "/usr/lib/electron40/electron"),
+        fake(1001, 1000, "electron", "/usr/lib/electron40/electron"),
+        fake(1002, 1001, "electron", "/usr/lib/electron40/electron"),
+    };
+    procs[1].unit = "launcher.service";
+    procs[2].unit = "app-org.chromium.Chromium-1000.scope";
+    procs[3].unit = "launcher.service";
+    procs[4].unit = "launcher.service";
+    for (&procs, 0..) |*p, i| p.start = i;
+    const windows = [_]core.Window{.{ .pid = 1000, .app_id = .init("equibop") }};
+    const groups = try build(arena.allocator(), &procs, &ix, &windows);
+    const g = for (groups) |g| {
+        if (g.root == 1000) break g;
+    } else return error.GroupMissing;
+    try std.testing.expectEqual(Kind.app, g.kind);
+    try std.testing.expectEqualStrings("Equibop", g.name);
+    try std.testing.expectEqual(@as(usize, 3), g.members.len); // its helpers in the launcher's unit too
 }

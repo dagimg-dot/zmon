@@ -6,6 +6,7 @@ pub const sampler = @import("sampler/root.zig");
 pub const config = @import("config/root.zig");
 pub const desktop = @import("desktop/root.zig");
 pub const users = @import("users/root.zig");
+pub const window = @import("window/root.zig");
 
 test {
     _ = platform;
@@ -14,4 +15,5 @@ test {
     _ = config;
     _ = desktop;
     _ = users;
+    _ = window;
 }

@@ -43,6 +43,13 @@ pub const Proc = struct {
     io_known: bool = false,
 };
 
+/// A window the compositor shows, by the process that owns it: its app id
+/// (the Wayland app id, or the X11 class) names the app a person sees.
+pub const Window = struct {
+    pid: i32,
+    app_id: @import("devices.zig").Text(96) = .{},
+};
+
 /// What the details pane shows of one process beyond its row: read only for
 /// the selected process. Text belongs to whoever read it.
 pub const Details = struct {
