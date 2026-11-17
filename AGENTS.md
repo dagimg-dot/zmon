@@ -59,6 +59,7 @@ src/      the executable. The only place nanoui is imported.
   - Text handed to `ui.text` is drawn after the function returns, so it must outlive it. Format with `c.print`, or copy a stack buffer with `fmt.own(c.alloc(), ...)`.
   - Never keep a slice into a buffer that is read again. Copy names out of the read buffer at once.
   - nanoui draws images from the caller's memory, so icon bytes live in the `Icons` cache (`system/apps`) for the whole run.
+  - nanoui's picture atlas would start at 2048 pixels a side, a 16 MB copy kept in memory on Linux. `app_icon.startSmall` starts it at 512 (zmon's pictures are small icons); nanoui doubles it when they don't fit.
 - **Reading /proc.**
   - Go through `files.read` (`system/platform`). It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
   - A process that vanishes or hides its files is skipped, never an error.

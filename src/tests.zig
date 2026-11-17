@@ -970,6 +970,21 @@ test "every page, the details and the shortcuts draw with Lexend alone, never a 
     try std.testing.expectEqual(@as(usize, 0), t.text.db.found.count());
 }
 
+test "the picture atlas starts at 512 pixels, not nanoui's 16 MB, and still holds the icons" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const im = &t.text.images;
+    try std.testing.expectEqual(@as(u32, @import("ui/app_icon.zig").atlas_side), im.side);
+    try std.testing.expect(im.entries.count() > 0); // the sidebar's icon is in it
+    try std.testing.expectEqual(@as(usize, 512 * 512 * 4), im.pixels.len);
+}
+
 test "closing Background from its heading doesn't pull the rows out from under the list" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();

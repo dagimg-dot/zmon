@@ -14,6 +14,7 @@ const shortcuts = @import("shortcuts.zig");
 const devices = @import("../pages/devices/root.zig");
 const sidebar = @import("sidebar.zig");
 const motion = @import("../ui/motion.zig");
+const app_icon = @import("../ui/app_icon.zig");
 const settings_page = @import("../pages/settings/root.zig");
 
 const State = state.State;
@@ -31,6 +32,7 @@ pub fn view(s: *State, c: *ui.Context) void {
     const chosen = theme.uiTheme(k);
     c.theme = chosen;
     c.theme_chosen = chosen;
+    app_icon.startSmall(c);
     if (s.threaded and !s.worker.running()) {
         // The worker asks for a frame through the window when a sample is ready.
         const w: ?system.sampler.Waker = if (c.waker) |wk| .{ .ctx = wk.ctx, .wake = wk.wake } else null;
