@@ -38,6 +38,7 @@ src/      the executable. The only place nanoui is imported.
               assets/fonts/  assets/app/ (icon PNGs and SVG, zmon.desktop)
   pages/      one folder per page: apps/ processes/ devices/ settings/  (root.zig is the page)
   tests.zig   the views, rendered offscreen, most against a fixed sample (`Fixture`)
+  bench.zig   `zig build bench`: each part of a sample and a frame, timed, with its allocations
 ```
 
 - **A feature is a folder with a `root.zig`.** `root.zig` is its public API and its test aggregator. The data side lives in `system/<feature>/`, the page in `src/pages/<feature>/`.
@@ -117,6 +118,8 @@ zig build test    # test-core, test-system and test-ui together
 ```
 
 `zig build test-system` runs the machine readers without compiling nanoui, which is the quick loop for data changes. `zig build check-cross` builds the data layers for macOS without running them, so the dummy backends stay compiling.
+
+A change that touches sampling or drawing is measured before and after with `zig build bench -Doptimize=ReleaseSafe`: it times each part of a sample and a frame on the live machine and counts their allocations (`ZMON_BENCH_TRACE=1` shows where the large ones come from). It leaves out what the window adds (GTK, OpenGL); for that, read the running app's threads in `/proc/PID/task/*/schedstat` and its memory in `/proc/PID/smaps_rollup`.
 
 A visible change is also rendered and looked at:
 

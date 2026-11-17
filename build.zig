@@ -52,6 +52,17 @@ pub fn build(b: *std.Build) void {
     run.addPassthruArgs();
     b.step("run", "Run zmon (opens its window)").dependOn(&run.step);
 
+    // `zig build bench -Doptimize=ReleaseSafe`: each part of a sample and a frame, timed
+    // and its allocations counted, on the live machine. No window opens.
+    const bench = b.addExecutable(.{ .name = "zmon-bench", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = app_imports,
+    }) });
+    b.step("bench", "Time a sample and a frame, and count their allocations").dependOn(&b.addRunArtifact(bench).step);
+
     const test_core = b.addTest(.{ .root_module = core });
     const test_system = b.addTest(.{ .root_module = system });
     // The views are rendered offscreen with ui.Tester: no window opens.
@@ -80,6 +91,7 @@ pub fn build(b: *std.Build) void {
     const check = b.step("check", "Check formatting, build everything and compile-check macOS");
     check.dependOn(&fmt.step);
     check.dependOn(&exe.step);
+    check.dependOn(&bench.step);
 
     // `zig build check-cross`: the data layers compiled for macOS, where they take the
     // dummy backends. The tests are built, not run, so a type error or a bad
