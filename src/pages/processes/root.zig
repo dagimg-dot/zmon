@@ -76,8 +76,7 @@ fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
         defer count.end();
         ui.text(c, c.print("{d} processes, {d} threads", .{ s.sample.process_count, s.sample.threads }), .{ .size = 12.5, .color = k.secondary });
     }
-    ui.key(c, "search");
-    if (ui.textField(c, &s.search, .{ .placeholder = "Search", .width = .{ .px = 220 }, .size = 13 }).changed) s.rebuild();
+    if (controls.search(c, &s.search)) s.rebuild();
     if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P" })) s.togglePause();
     if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I" })) s.details_open = !s.details_open;
     if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);

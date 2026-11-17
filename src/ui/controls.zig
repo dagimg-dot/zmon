@@ -15,6 +15,13 @@ pub fn press(c: *ui.Context, d: ui.Div, desc: ui.access.Describe) bool {
     return it.clicked;
 }
 
+/// The search field Apps and Processes share; true when its text changed.
+/// Placeholder and width are the same on both, so they read as one search.
+pub fn search(c: *ui.Context, buf: *ui.TextBuffer) bool {
+    ui.key(c, "search");
+    return ui.textField(c, buf, .{ .placeholder = "Search", .width = .{ .px = 220 }, .size = 13 }).changed;
+}
+
 pub const ButtonOptions = struct {
     icon: []const u8 = "",
     disabled: bool = false,
