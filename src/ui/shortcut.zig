@@ -36,6 +36,16 @@ pub const details: Shortcut = .{ .what = "Show or hide the details", .keys = &.{
 pub const end_task: Shortcut = .{ .what = "End task (Return confirms)", .keys = &.{"Delete"} };
 pub const force_quit: Shortcut = .{ .what = "Force quit", .keys = &.{ "Shift", "Delete" } };
 
+/// The arrow keys, drawn rather than written: Lexend has no arrows, and a
+/// character the font lacks makes the text system read a fallback font,
+/// often a CJK one of tens of megabytes, and keep it for the whole run.
+const arrow_keys = [_]struct { label: []const u8, name: []const u8, icon: []const u8, turn: f32 = 0 }{
+    .{ .label = "↑", .name = "Up", .icon = "arrow.up" },
+    .{ .label = "↓", .name = "Down", .icon = "arrow.up", .turn = std.math.pi },
+    .{ .label = "←", .name = "Left", .icon = "arrow.left" },
+    .{ .label = "→", .name = "Right", .icon = "arrow.right" },
+};
+
 /// One key as a keycap: a raised key with a firmer lower edge.
 pub fn keycap(c: *ui.Context, k: theme.Colors, label: []const u8, small: bool) void {
     ui.key(c, label);
@@ -43,6 +53,11 @@ pub fn keycap(c: *ui.Context, k: theme.Colors, label: []const u8, small: bool) v
     const d = ui.div(c).row().h(h).minW(h).px(if (small) 6 else 7).itemsCenter().justifyCenter().rounded(5)
         .bg(k.stripe).border(k.border).shadow(.{ .color = k.border, .blur = 0, .y = 1 });
     defer d.end();
+    for (arrow_keys) |a| if (std.mem.eql(u8, a.label, label)) {
+        ui.access.describe(c, d.index, .{ .role = .static_text, .label = a.name });
+        ui.icon(c, a.icon, .{ .size = if (small) 10 else 11, .weight = .semibold, .color = k.text, .rotation = a.turn });
+        return;
+    };
     ui.text(c, label, .{ .size = if (small) 11 else 11.5, .weight = .semibold, .color = k.text });
 }
 

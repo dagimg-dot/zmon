@@ -40,6 +40,17 @@ pub fn line(c: *ui.Context, k: theme.Colors, key: []const u8, first: bool) ui.Di
     return ui.div(c).row().wFull().px(16).py(10).itemsCenter().gap(16);
 }
 
+/// A rate with an arrow down for what comes in, up for what goes out. The
+/// arrow is drawn, not written: Lexend has none, and a character the font
+/// lacks makes the text system read a large fallback font and keep it.
+fn flow(c: *ui.Context, way: enum { in, out }, rate: []const u8, color: ui.Color) void {
+    const r = ui.div(c).row().itemsCenter().gap(4);
+    defer r.end();
+    ui.access.describe(c, r.index, .{ .role = .static_text, .label = c.print("{s} {s}", .{ if (way == .in) "In" else "Out", rate }) });
+    ui.icon(c, "arrow.up", .{ .size = 10, .weight = .semibold, .color = color, .rotation = if (way == .in) std.math.pi else 0 });
+    ui.text(c, rate, .{ .size = 12.5, .color = color, .tabular = true });
+}
+
 /// A thin bar `fraction` full.
 pub fn bar(c: *ui.Context, k: theme.Colors, fraction: f32, color: ui.Color, width: f32) void {
     const track = ui.div(c).row().w(width).h(6).rounded(3).bg(k.stripe).clip();
@@ -228,8 +239,8 @@ pub fn network(c: *ui.Context, s: *State, k: theme.Colors) void {
                     c.print("{s}{s}{d} Mb/s link", .{ where, if (where.len > 0) " · " else "", f.speed })
                 else if (where.len > 0) where else "No address", .{ .size = 11.5, .color = k.secondary });
             }
-            ui.text(c, c.print("↓ {s}", .{fmt.rate(&b[0], f.rx_bps)}), .{ .size = 12.5, .color = k.text, .tabular = true });
-            ui.text(c, c.print("↑ {s}", .{fmt.rate(&b[1], f.tx_bps)}), .{ .size = 12.5, .color = k.secondary, .tabular = true });
+            flow(c, .in, fmt.own(c.alloc(), fmt.rate(&b[0], f.rx_bps)), k.text);
+            flow(c, .out, fmt.own(c.alloc(), fmt.rate(&b[1], f.tx_bps)), k.secondary);
         }
     }
 }

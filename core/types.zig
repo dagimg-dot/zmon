@@ -81,7 +81,7 @@ pub const Details = struct {
 /// A network socket a process holds, as one line.
 pub const Socket = struct {
     proto: @import("devices.zig").Text(4) = .{},
-    /// "127.0.0.1:5000", or "local → remote" when connected.
+    /// "127.0.0.1:5000", or "local to remote" when connected.
     text: @import("devices.zig").Text(112) = .{},
     listening: bool = false,
 };

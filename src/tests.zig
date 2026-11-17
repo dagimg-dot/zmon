@@ -933,11 +933,41 @@ test "the details say why a process runs: its parents, its service, and a warnin
     state.selected_proc = 500;
     t.settle(0.3);
     try std.testing.expect(t.hasText("Why it's running"));
-    try std.testing.expect(t.hasText("systemd (1) → daemon (500)"));
+    try std.testing.expect(t.hasText("systemd (1) › daemon (500)"));
     try std.testing.expect(t.hasText("The service daemon.service"));
     state.selected_proc = 1;
     t.settle(0.3);
     try std.testing.expect(t.hasText("Runs as root: it can change anything on this machine."));
+}
+
+test "every page, the details and the shortcuts draw with Lexend alone, never a fallback font" {
+    // A character Lexend lacks makes the text system read a fallback font
+    // whole and keep it: on a machine with CJK fonts, 20 to 30 MB.
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    f.snap.devices.interface_count = 1;
+    f.snap.devices.interfaces[0] = .{ .name = .init("wlan0"), .rx_bps = 2048, .tx_bps = 512 };
+    f.snap.devices.battery = .{ .present = true, .percent = 80, .seconds_left = 3600 };
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    state.details_open = true;
+    state.selected_proc = 500;
+    state.selected_app = 500;
+    for ([_]app_state.Page{ .apps, .processes, .cpu, .memory, .disk, .network, .battery, .settings }) |page| {
+        state.page = page;
+        t.settle(0.3);
+    }
+    state.page = .processes;
+    t.settle(0.3);
+    try std.testing.expect(t.containsText("daemon (500)")); // the parent chain is drawn
+    state.shortcuts_open = true;
+    t.settle(0.3);
+    try std.testing.expect(t.hasText("Keyboard shortcuts"));
+    try std.testing.expectEqual(@as(usize, 0), t.text.db.found.count());
 }
 
 test "closing Background from its heading doesn't pull the rows out from under the list" {

@@ -142,7 +142,7 @@ fn why(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, d: ?*const core
         var i = n;
         while (i > 0) {
             i -= 1;
-            w.writer.print("{s}{s} ({d})", .{ if (i + 1 < n) " → " else "", chain[i].name, chain[i].pid }) catch {};
+            w.writer.print("{s}{s} ({d})", .{ if (i + 1 < n) " › " else "", chain[i].name, chain[i].pid }) catch {};
         }
         path(c, k, "Started by", w.written());
     }

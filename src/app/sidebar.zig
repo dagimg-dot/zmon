@@ -231,7 +231,7 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
             .icon = "network",
             .title = "Network",
             .value = fmt.own(c.alloc(), fmt.rate(&b[3], smp.net_in_bps + smp.net_out_bps)),
-            .detail = c.print("↓ {s} · ↑ {s}", .{ fmt.rate(&b[1], smp.net_in_bps), fmt.rate(&b[2], smp.net_out_bps) }),
+            .detail = c.print("in {s} · out {s}", .{ fmt.rate(&b[1], smp.net_in_bps), fmt.rate(&b[2], smp.net_out_bps) }),
             .history = &h.net_in,
             .second = &h.net_out,
             .floor = 64 * 1024,

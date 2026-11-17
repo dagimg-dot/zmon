@@ -169,7 +169,7 @@ fn describe(e: Entry, proto: []const u8, v6: bool) Socket {
     var w: std.Io.Writer = .fixed(&buf);
     address(&w, e.local, v6);
     if (!s.listening) {
-        w.writeAll(" → ") catch {};
+        w.writeAll(" to ") catch {};
         address(&w, e.remote, v6);
     }
     s.text = .init(w.buffered());
