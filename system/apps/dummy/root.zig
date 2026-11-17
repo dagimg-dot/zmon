@@ -6,6 +6,7 @@ pub const Entry = struct {
     name: []const u8 = "",
     icon: []const u8 = "",
     hidden: bool = false,
+    terminal: bool = false,
 };
 
 pub const Index = struct {
@@ -18,6 +19,14 @@ pub const Index = struct {
     }
     pub fn add(ix: *Index, id: []const u8, text: []const u8) void {
         _ = .{ ix, id, text };
+    }
+    pub fn lookupId(ix: *const Index, key: []const u8) ?*const Entry {
+        _ = .{ ix, key };
+        return null;
+    }
+    pub fn lookupProgram(ix: *const Index, key: []const u8) ?*const Entry {
+        _ = .{ ix, key };
+        return null;
     }
     pub fn lookup(ix: *const Index, key: []const u8) ?*const Entry {
         _ = .{ ix, key };

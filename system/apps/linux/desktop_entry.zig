@@ -9,6 +9,9 @@ pub const DesktopEntry = struct {
     wm_class: []const u8 = "",
     exec: []const u8 = "",
     no_display: bool = false,
+    /// `Terminal=true`: a program that runs inside a terminal, not an app
+    /// with a window of its own.
+    terminal: bool = false,
     is_app: bool = true,
 
     const Key = enum {
@@ -18,6 +21,7 @@ pub const DesktopEntry = struct {
         StartupWMClass,
         Exec,
         NoDisplay,
+        Terminal,
         Hidden,
     };
 
@@ -73,6 +77,7 @@ pub const DesktopEntry = struct {
             .NoDisplay, .Hidden => if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "1")) {
                 entry.no_display = true;
             },
+            .Terminal => entry.terminal = std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "1"),
         }
     }
 

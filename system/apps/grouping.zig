@@ -2,18 +2,21 @@
 //! (Firefox and every helper it started), background services, and the
 //! kernel's own threads.
 //!
-//! A process's systemd unit says first which app or service it belongs to:
-//! desktops start each app in a scope of its own ("app-com.anthropic.Claude-
-//! 1926.scope"), which every helper it starts stays in, however it was
-//! started (a Flatpak's bwrap, an Electron wrapper script). The app's id in
-//! the unit's name finds its launcher entry. A service's unit makes a
-//! background group named after it.
+//! One rule decides, with no app named in it: a process that a launcher entry
+//! names, when its parent isn't that same app, starts an app of its own, and
+//! everything it starts belongs to it, wherever it runs. So an app opened
+//! from a launcher that gives it no unit of its own (vicinae, rofi, a file
+//! manager, a script) is that app, not its launcher's; one started from a
+//! terminal is its own app, while the terminal keeps its shells and tools;
+//! and a browser's helpers, which run the browser's own program, stay with it.
 //!
-//! Processes in a unit that holds a whole session (a login session, the
-//! user's service manager) or in none fall back to the process tree: an app
-//! is a process that a launcher entry names, and what it starts is grouped
-//! under it. Session scaffolding (init, the compositor, the display manager)
-//! never swallows the apps it launched.
+//! What no app has started goes by its systemd unit: an app's scope whose
+//! processes no entry names (a Flatpak's bwrap, an Electron wrapper script)
+//! is found by the id in the scope's name; a service or a container makes a
+//! background group named after it. Processes in a unit that holds a whole
+//! session (a login session, the user's service manager) or in none fall back
+//! to the process tree, where session scaffolding (init, the compositor, the
+//! display manager) never swallows what it launched.
 const std = @import("std");
 const core = @import("zmon-core");
 const Proc = core.Proc;
@@ -130,6 +133,28 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
     for (procs, 0..) |p, i| at.putAssumeCapacity(p.pid, @intCast(i));
 
     const none = std.math.maxInt(u32);
+    // The launcher entry each process is, by its executable, its command
+    // line's program or its name (null: none a person launches).
+    const Entry = @TypeOf(index.lookup("").?);
+    const entry_of = try a.alloc(?Entry, procs.len);
+    for (procs, 0..) |*p, i| entry_of[i] = if (p.kthread) null else visibleEntry(index, p);
+    // An app's root names an entry its parent doesn't; each process belongs
+    // to the nearest root among itself and its ancestors.
+    const app_of = try a.alloc(u32, procs.len);
+    for (procs, 0..) |_, i| {
+        var cur: u32 = @intCast(i);
+        var hops: u32 = 0;
+        app_of[i] = while (hops < 64) : (hops += 1) {
+            if (procs[cur].kthread) break none;
+            const parent = at.get(procs[cur].ppid);
+            if (entry_of[cur]) |e| {
+                const same = if (parent) |pi| entry_of[pi] == e else false;
+                if (!same) break cur;
+            }
+            cur = parent orelse break none;
+        } else none;
+    }
+
     // A unit the compositor or init runs in holds the whole session, not one
     // app: what it started is grouped by the process tree instead.
     var broad = std.StringHashMapUnmanaged(void).empty;
@@ -141,9 +166,28 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
     const group_of = try a.alloc(u32, procs.len);
     const by_unit_mode = try a.alloc(bool, procs.len);
     var by_unit = std.StringHashMapUnmanaged(u32).empty;
+    // An app's scope belongs to that app: a process in it that the app's
+    // tree doesn't reach (it detached) joins the app rather than make a
+    // second group under the same name.
+    for (procs, 0..) |p, i| {
+        if (app_of[i] != i) continue;
+        switch (classify(p.unit)) {
+            .app => if (!broad.contains(p.unit)) {
+                const slot = try by_unit.getOrPut(a, p.unit);
+                if (!slot.found_existing) slot.value_ptr.* = @intCast(i);
+            },
+            else => {},
+        }
+    }
     for (procs, 0..) |p, i| {
         by_unit_mode[i] = false;
         group_of[i] = none;
+        if (app_of[i] != none) {
+            // An app's, whatever unit it runs in.
+            group_of[i] = app_of[i];
+            by_unit_mode[i] = true;
+            continue;
+        }
         if (p.kthread or broad.contains(p.unit)) continue;
         const key = switch (classify(p.unit)) {
             .none => continue,
@@ -197,11 +241,16 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
         std.mem.swap(u32, &members[0], &members[lead]);
         const root = &procs[members[0]];
         const unit = classify(root.unit);
+        // A scope's name carries the app's desktop file id, by the systemd
+        // convention: only an entry's own file name answers to it.
         const by_id = switch (unit) {
-            .app => |id| index.lookup(id),
+            .app => |id| index.lookupId(id),
             else => null,
         };
-        const entry = by_id orelse if (unit == .service) null else index.lookup(std.fs.path.basename(root.exe)) orelse index.lookup(root.name);
+        // An app's root names its own entry; a unit's group, the id in the
+        // unit's name; a service, none (it is named after its unit).
+        const own = if (app_of[members[0]] == members[0]) entry_of[members[0]] else null;
+        const entry = own orelse by_id orelse if (unit == .service) null else index.lookup(std.fs.path.basename(root.exe)) orelse index.lookup(root.name);
         const is_app = if (entry) |e| !e.hidden else false;
         var g: Group = .{
             .kind = if (is_app) .app else .background,
@@ -223,6 +272,19 @@ pub fn build(a: std.mem.Allocator, procs: []const Proc, index: anytype) ![]Group
     }
     std.mem.sort(Group, groups.items, {}, order);
     return groups.items;
+}
+
+/// The launcher entry a process is: one a person launches (not hidden),
+/// with a window of its own (not run in a terminal), matched by the program
+/// it runs, which the entry's Exec names. Its window class doesn't count: a
+/// class names windows, and another program may share the word.
+fn visibleEntry(index: anytype, p: *const Proc) @TypeOf(index.lookup("")) {
+    const tries = [_][]const u8{ std.fs.path.basename(p.exe), p.program, p.name };
+    for (tries) |key| {
+        if (key.len == 0) continue;
+        if (index.lookupProgram(key)) |e| if (!e.hidden and !e.terminal) return e;
+    }
+    return null;
 }
 
 fn totals(g: *Group, procs: []const Proc) void {
@@ -447,4 +509,117 @@ test "helpers left in the compositor's unit join the app their parent is in" {
         if (std.mem.eql(u8, g.name, "tmux-spawn")) try std.testing.expectEqual(@as(usize, 2), g.members.len);
         if (std.mem.eql(u8, g.name, "swaybg")) try std.testing.expectEqual(@as(usize, 1), g.members.len);
     }
+}
+
+test "an app started by a launcher, a terminal or a script is its own app, not theirs" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("launcher", "[Desktop Entry]\nType=Application\nName=Launcher\nExec=launcher-server\n");
+    ix.add("com.example.Notes", "[Desktop Entry]\nType=Application\nName=Notes\nExec=notes\n");
+    ix.add("term", "[Desktop Entry]\nType=Application\nName=Terminal\nExec=term\n");
+    ix.add("browser", "[Desktop Entry]\nType=Application\nName=Browser\nExec=browser %u\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(900, 1, "systemd", "/usr/lib/systemd/systemd"),
+        // A launcher run as a service, with a helper of its own and an app it opened.
+        fake(1000, 900, "launcher-server", "/usr/bin/launcher-server"),
+        fake(1001, 1000, "launcher-index", "/usr/libexec/launcher-index"),
+        fake(1002, 1000, "notes", "/usr/bin/notes"),
+        fake(1003, 1002, "notes", "/usr/bin/notes"), // its own helper
+        // A terminal in its own scope: a shell and an editor stay with it, a GUI app doesn't.
+        fake(2000, 900, "term", "/usr/bin/term"),
+        fake(2001, 2000, "zsh", "/usr/bin/zsh"),
+        fake(2002, 2001, "vim", "/usr/bin/vim"),
+        fake(2003, 2001, "browser", "/usr/bin/browser"),
+        fake(2004, 2003, "browser", "/usr/bin/browser"),
+        // Another user's app: no executable to read, only its command line's program.
+        fake(3000, 900, "MainThread", ""),
+    };
+    for (procs[2..6]) |*p| p.unit = "launcher.service";
+    for (procs[6..11]) |*p| p.unit = "app-term-2000.scope";
+    procs[11].program = "notes";
+    procs[11].unit = "app-flatpak-com.example.Notes-3000.scope";
+    for (&procs, 0..) |*p, i| p.start = i;
+    const groups = try build(arena.allocator(), &procs, &ix);
+    const Want = struct { name: []const u8, root: i32, count: usize };
+    const want = [_]Want{
+        .{ .name = "Launcher", .root = 1000, .count = 2 }, // itself and its index, not Notes
+        .{ .name = "Notes", .root = 1002, .count = 2 },
+        .{ .name = "Terminal", .root = 2000, .count = 3 }, // term, zsh, vim
+        .{ .name = "Browser", .root = 2003, .count = 2 }, // started from the shell: its own app
+        .{ .name = "Notes", .root = 3000, .count = 1 }, // another user's, by its program
+    };
+    for (want) |w| {
+        const g = for (groups) |g| {
+            if (g.root == w.root) break g;
+        } else return error.GroupMissing;
+        try std.testing.expectEqualStrings(w.name, g.name);
+        try std.testing.expectEqual(Kind.app, g.kind);
+        try std.testing.expectEqual(w.count, g.members.len);
+    }
+}
+
+test "a terminal program is never an app of its own, and a window class doesn't name a process" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("term", "[Desktop Entry]\nType=Application\nName=Terminal\nExec=term\n");
+    ix.add("nvim", "[Desktop Entry]\nType=Application\nName=Neovim\nExec=nvim %F\nTerminal=true\n");
+    ix.add("com.example.Chat", "[Desktop Entry]\nType=Application\nName=Chat\nExec=chat-desktop\nStartupWMClass=chat\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(10, 1, "term", "/usr/bin/term"),
+        fake(11, 10, "zsh", "/usr/bin/zsh"),
+        fake(12, 11, "nvim", "/usr/bin/nvim"), // Terminal=true: stays with the terminal
+        fake(13, 11, "chat", "/home/u/.local/bin/chat"), // a CLI that shares the chat app's window class
+    };
+    for (&procs, 0..) |*p, i| p.start = i;
+    const groups = try build(arena.allocator(), &procs, &ix);
+    for (groups) |g| {
+        try std.testing.expect(!std.mem.eql(u8, g.name, "Neovim"));
+        try std.testing.expect(!std.mem.eql(u8, g.name, "Chat"));
+        if (std.mem.eql(u8, g.name, "Terminal")) try std.testing.expectEqual(@as(usize, 4), g.members.len);
+    }
+}
+
+test "a process that left its app's tree but stayed in its scope joins the app" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("com.example.Chat", "[Desktop Entry]\nType=Application\nName=Chat\nExec=chat-desktop\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        fake(100, 1, "chat-desktop", "/usr/bin/chat-desktop"),
+        fake(200, 1, "adb", "/usr/bin/adb"), // a daemon it started, which detached
+    };
+    procs[1].unit = "app-com.example.Chat-100.scope";
+    procs[2].unit = "app-com.example.Chat-100.scope";
+    for (&procs, 0..) |*p, i| p.start = i;
+    const groups = try build(arena.allocator(), &procs, &ix);
+    var chats: usize = 0;
+    for (groups) |g| if (std.mem.eql(u8, g.name, "Chat")) {
+        chats += 1;
+        try std.testing.expectEqual(@as(usize, 2), g.members.len);
+    };
+    try std.testing.expectEqual(@as(usize, 1), chats);
+}
+
+test "a scope's id names an app only when it is a launcher entry's file name" {
+    var ix = Index.init(std.testing.allocator);
+    defer ix.deinit();
+    ix.add("viewer", "[Desktop Entry]\nType=Application\nName=Viewer\nExec=/bin/sh -c viewer\n");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var procs = [_]Proc{
+        fake(1, 0, "systemd", "/usr/lib/systemd/systemd"),
+        // A script a compositor ran through sh: its scope says "sh", which is no app.
+        fake(500, 1, "bash", "/usr/bin/bash"),
+    };
+    procs[1].unit = "app-niri-sh-500.scope";
+    const groups = try build(arena.allocator(), &procs, &ix);
+    for (groups) |g| try std.testing.expect(g.kind != .app);
 }

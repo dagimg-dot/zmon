@@ -13,6 +13,8 @@ pub const Entry = struct {
     id: []const u8 = "",
     /// NoDisplay: it runs a program but isn't something a person launches.
     hidden: bool = false,
+    /// Terminal=true: it runs inside a terminal, so it is never an app of its own.
+    terminal: bool = false,
 };
 
 /// The launcher entries installed on this machine.
@@ -20,6 +22,12 @@ pub const Index = struct {
     arena: std.heap.ArenaAllocator,
     entries: std.ArrayList(Entry) = .empty,
     by_key: std.StringHashMapUnmanaged(u32) = .empty,
+    /// Only the program an entry runs and its file name: what can say which
+    /// app a process is. A window class names windows, not processes.
+    by_program: std.StringHashMapUnmanaged(u32) = .empty,
+    /// Only the entries' file names ("com.anthropic.Claude"): what a systemd
+    /// app scope's name carries.
+    by_id: std.StringHashMapUnmanaged(u32) = .empty,
 
     pub fn init(gpa: std.mem.Allocator) Index {
         return .{ .arena = .init(gpa) };
@@ -41,6 +49,7 @@ pub const Index = struct {
             .wm_class = aa.dupe(u8, parsed.wm_class) catch "",
             .id = aa.dupe(u8, id) catch "",
             .hidden = parsed.no_display,
+            .terminal = parsed.terminal,
         };
         // A web app launcher (`brave --app-id=...`) runs the browser, which is not it:
         // it must not claim the browser's program name.
@@ -56,6 +65,34 @@ pub const Index = struct {
             const slot = ix.by_key.getOrPut(a, lower) catch continue;
             if (!slot.found_existing or (ix.entries.items[slot.value_ptr.*].hidden and !e.hidden)) slot.value_ptr.* = at;
         }
+        if (e.id.len > 0) if (std.ascii.allocLowerString(a, e.id)) |lower| {
+            if (ix.by_id.getOrPut(a, lower)) |slot| {
+                if (!slot.found_existing) slot.value_ptr.* = at;
+            } else |_| {}
+        } else |_| {};
+        for ([_][]const u8{ if (web_app) "" else e.program, e.id }) |key| {
+            if (key.len == 0) continue;
+            const lower = std.ascii.allocLowerString(a, key) catch continue;
+            const slot = ix.by_program.getOrPut(a, lower) catch continue;
+            if (!slot.found_existing or (ix.entries.items[slot.value_ptr.*].hidden and !e.hidden)) slot.value_ptr.* = at;
+        }
+    }
+
+    /// The entry that runs the program `key` (or is called `key`): strong
+    /// enough to say which app a process is.
+    pub fn lookupProgram(ix: *const Index, key: []const u8) ?*const Entry {
+        var buf: [128]u8 = undefined;
+        if (key.len == 0 or key.len > buf.len) return null;
+        const at = ix.by_program.get(std.ascii.lowerString(&buf, key)) orelse return null;
+        return &ix.entries.items[at];
+    }
+
+    /// The entry whose file name is `key`, exactly (any case).
+    pub fn lookupId(ix: *const Index, key: []const u8) ?*const Entry {
+        var buf: [128]u8 = undefined;
+        if (key.len == 0 or key.len > buf.len) return null;
+        const at = ix.by_id.get(std.ascii.lowerString(&buf, key)) orelse return null;
+        return &ix.entries.items[at];
     }
 
     pub fn lookup(ix: *const Index, key: []const u8) ?*const Entry {

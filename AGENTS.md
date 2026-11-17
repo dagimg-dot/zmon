@@ -23,7 +23,7 @@ system/   module zmon-system: reads the machine. Imports zmon-core, never nanoui
   platform/   quiet file reads, the clock, the environment   linux/  dummy/
   sampler/    the sampler, rates and history; worker.zig (its thread) and the snapshots the app reads
               linux/{process,details,devices,cpu,memory,disk,network,load,machine,units}.zig  dummy/
-  apps/       launcher index, icons, grouping by systemd unit and process tree   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
+  apps/       launcher index, icons, grouping (apps by what they run, then systemd unit, then process tree)   linux/{index,loader,paths,desktop_entry,icons}.zig  dummy/
   config/     the settings file and the user's theme folder (XDG)   linux/  dummy/
   users/      account names by uid, from /etc/passwd   linux/  dummy/
   desktop/    the program's name for the shell, which matches it to zmon.desktop   linux/  dummy/
