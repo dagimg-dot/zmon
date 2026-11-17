@@ -63,6 +63,7 @@ src/      the executable. The only place nanoui is imported.
 - **Reading /proc.**
   - Go through `files.read` (`system/platform`). It reads straight from the kernel and returns plain errors, because Zig's file reader prints a stack trace when `/proc` refuses a read.
   - A process that vanishes or hides its files is skipped, never an error.
+  - Each file is an open, a read and a close, and the kernel builds its text afresh, so the scan is most of the worker's time. `stat` is read for every process every sample (the only whole-process CPU count); `statm` and `io` only when a process ran or every few scans, and an idle process's disk rate is measured over the time since its last read. Don't keep `/proc` files open between samples: each open one holds a page of kernel memory (16 KB on Apple Silicon).
 - **Sampling.**
   - One sampler, on its own thread (`system/sampler/worker.zig`): reading /proc costs 8 to 17 ms a sample on a slow-clocked core, which stalled a frame a second on the UI thread. Only the worker touches the `Sampler`; the app reads `Snapshot`s, handed over through a lock-free triple buffer, and the worker wakes the view when one is ready. Nothing polls while idle.
   - The app tells the worker what to read (`Worker.ask`): the process list only while a list is open or a quit is being watched. Tests leave `State.threaded` off and `tick` samples on the test's thread through the same hand-over (`Worker.step`).

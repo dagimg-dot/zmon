@@ -41,6 +41,9 @@ pub const Proc = struct {
     /// I/O counters Linux lets us read (our own).
     disk_bps: f32 = 0,
     io_known: bool = false,
+    /// The I/O counters were read in this sample, not kept from an earlier one
+    /// (an idle process's are read only every few samples).
+    io_fresh: bool = false,
 };
 
 /// A window the compositor shows, by the process that owns it: its app id

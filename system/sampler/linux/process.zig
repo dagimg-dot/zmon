@@ -1,5 +1,7 @@
 //! Every process, from /proc/<pid>/{stat,statm,exe,io,status}. It reports the
 //! counters as the kernel keeps them; turning them into rates is the sampler's job.
+//! Each file costs an open, a read and a close, and the kernel builds its text
+//! afresh: what an idle process can't have changed is not read again.
 const std = @import("std");
 const core = @import("zmon-core");
 const files = @import("../../platform/root.zig").files;
@@ -134,6 +136,12 @@ const Known = struct {
     ticks: u64 = 0,
     memory: u64 = 0,
     memory_scan: u32 = 0,
+    /// Its I/O counters when last read, and when; read again, as memory is,
+    /// only when it ran or every few scans.
+    io_read: u64 = 0,
+    io_write: u64 = 0,
+    io_known: bool = false,
+    io_scan: u32 = 0,
 };
 
 /// What a scan reads.
@@ -148,8 +156,10 @@ pub const ScanOptions = struct {
 const recheck = 5;
 
 /// Walks /proc. Owner and executable are read once per process and remembered,
-/// so a steady machine costs three small reads per process a sample: stat,
-/// statm, and io for the user's own processes (the kernel refuses the rest).
+/// so a steady machine costs one small read per process a sample (stat), and
+/// for one that ran, statm and io (io only for the user's own processes: the
+/// kernel refuses the rest). An idle process's statm and io are read every few
+/// scans: most of a desktop's processes sleep through any given second.
 pub const Reader = struct {
     gpa: std.mem.Allocator,
     page: u64,
@@ -219,9 +229,10 @@ pub const Reader = struct {
             };
 
             if (!kthread) {
-                // Memory moves when a process runs: an idle one keeps its last
-                // figure for a few scans.
-                const idle = known.ticks == p.cpu_ticks and r.scans -% known.memory_scan < recheck and known.memory_scan != 0;
+                // Memory and I/O move when a process runs: an idle one keeps its
+                // last figures for a few scans.
+                const ran = known.ticks != p.cpu_ticks;
+                const idle = !ran and r.scans -% known.memory_scan < recheck and known.memory_scan != 0;
                 if (idle) {
                     p.memory = known.memory;
                 } else if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/statm", .{pid}) catch continue, &buf)) |statm| {
@@ -235,12 +246,22 @@ pub const Reader = struct {
                 } else |_| {}
                 known.ticks = p.cpu_ticks;
                 // Another user's I/O counters are refused unless we are root.
-                if (r.me == 0 or p.uid == r.me) {
+                const io_idle = !ran and r.scans -% known.io_scan < recheck and known.io_scan != 0;
+                if (io_idle) {
+                    p.disk_read = known.io_read;
+                    p.disk_write = known.io_write;
+                    p.io_known = known.io_known;
+                } else if (r.me == 0 or p.uid == r.me) {
+                    known.io_scan = r.scans;
                     if (files.read(io, dir, std.fmt.bufPrint(&path, "{d}/io", .{pid}) catch continue, &buf)) |io_text| {
                         p.disk_read = core.text.field(io_text, "read_bytes:");
                         p.disk_write = core.text.field(io_text, "write_bytes:");
                         p.io_known = true;
+                        p.io_fresh = true;
                     } else |_| {}
+                    known.io_read = p.disk_read;
+                    known.io_write = p.disk_write;
+                    known.io_known = p.io_known;
                 }
             }
             out.append(a, p) catch break;

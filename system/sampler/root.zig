@@ -48,7 +48,9 @@ pub const History = struct {
     battery: Ring(f32) = .{},
 };
 
-const Prev = struct { ticks: u64, start: u64, read: u64, write: u64 };
+/// A process's counters in the last sample. The I/O counters are as last
+/// read, and `io_at` says when: an idle process's are read only now and then.
+const Prev = struct { ticks: u64, start: u64, read: u64, write: u64, io_at: f64 };
 
 /// Windows kept a sample; a desktop rarely has more.
 const max_windows = 256;
@@ -161,7 +163,7 @@ pub const Sampler = struct {
         const dt = @max(now - s.prev_time, 0.001);
         const first = s.samples == 0;
         _ = s.arena.reset(.retain_capacity);
-        s.collectProcs(dt, first);
+        s.collectProcs(dt, now, first);
         // Who owns which window names apps whose program doesn't: read with the lists.
         s.window_count = if (s.want.procs) @intCast(window.list(s.io, &s.windows)) else 0;
         s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start, s.unitOf(s.want.detail_pid)) else null;
@@ -225,7 +227,7 @@ pub const Sampler = struct {
         return null;
     }
 
-    fn collectProcs(s: *Sampler, dt: f64, first: bool) void {
+    fn collectProcs(s: *Sampler, dt: f64, now: f64, first: bool) void {
         if (!s.want.procs) {
             s.procs = &.{};
             s.process_count = s.reader.count(s.io);
@@ -240,27 +242,31 @@ pub const Sampler = struct {
         const a = s.arena.allocator();
         var list: std.ArrayList(Proc) = .empty;
         s.process_count = s.reader.scan(s.io, a, &list, .{ .kernel_threads = s.want.kernel_threads });
-        s.applyRates(list.items, dt, fresh);
+        s.applyRates(list.items, dt, now, fresh);
         s.procs = list.items;
     }
 
     /// Turns each process's counters into rates against the last sample. A
     /// pid with another start time is a new process (the pid was reused) and
-    /// has no rate yet; counters that went backwards count as nothing.
-    fn applyRates(s: *Sampler, procs: []Proc, dt: f64, fresh: bool) void {
+    /// has no rate yet; counters that went backwards count as nothing. I/O
+    /// counters an idle process kept from an earlier read show no I/O now, and
+    /// the next read is measured over the whole time since the last one.
+    fn applyRates(s: *Sampler, procs: []Proc, dt: f64, now: f64, fresh: bool) void {
         s.next_prev.clearRetainingCapacity();
         for (procs) |*p| {
-            if (s.prev.get(p.pid)) |old| {
-                if (old.start == p.start and !fresh) {
+            var next: Prev = .{ .ticks = p.cpu_ticks, .start = p.start, .read = p.disk_read, .write = p.disk_write, .io_at = now };
+            if (s.prev.get(p.pid)) |old| if (old.start == p.start) {
+                if (!p.io_fresh) next.io_at = old.io_at;
+                if (!fresh) {
                     const ticks = p.cpu_ticks -| old.ticks;
                     p.cpu = @floatCast(@as(f64, @floatFromInt(ticks)) * 100.0 / (@as(f64, @floatFromInt(s.hz)) * dt));
-                    if (p.io_known) {
+                    if (p.io_known and p.io_fresh) {
                         const bytes = (p.disk_read -| old.read) + (p.disk_write -| old.write);
-                        p.disk_bps = @floatCast(@as(f64, @floatFromInt(bytes)) / dt);
+                        p.disk_bps = @floatCast(@as(f64, @floatFromInt(bytes)) / @max(now - old.io_at, dt));
                     }
                 }
-            }
-            s.next_prev.put(s.gpa, p.pid, .{ .ticks = p.cpu_ticks, .start = p.start, .read = p.disk_read, .write = p.disk_write }) catch {};
+            };
+            s.next_prev.put(s.gpa, p.pid, next) catch {};
         }
         std.mem.swap(@TypeOf(s.prev), &s.prev, &s.next_prev);
     }
@@ -450,23 +456,45 @@ test "rates come from the last sample of the same process, never a reused pid's"
     var s = Sampler.init(std.testing.allocator, std.testing.io);
     defer s.deinit();
     s.hz = 100;
-    var one = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 100, .disk_read = 1000, .io_known = true }};
-    s.applyRates(&one, 1, false);
+    var one = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 100, .disk_read = 1000, .io_known = true, .io_fresh = true }};
+    s.applyRates(&one, 1, 1, false);
     try std.testing.expectEqual(@as(f32, 0), one[0].cpu); // nothing to measure against yet
-    var two = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 150, .disk_read = 3000, .io_known = true }};
-    s.applyRates(&two, 1, false);
+    var two = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .cpu_ticks = 150, .disk_read = 3000, .io_known = true, .io_fresh = true }};
+    s.applyRates(&two, 1, 2, false);
     try std.testing.expectApproxEqAbs(@as(f32, 50), two[0].cpu, 0.01); // 50 ticks of 100 a second
     try std.testing.expectApproxEqAbs(@as(f32, 2000), two[0].disk_bps, 0.01);
-    var reused = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 400, .io_known = true }};
-    s.applyRates(&reused, 1, false);
+    var reused = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 400, .io_known = true, .io_fresh = true }};
+    s.applyRates(&reused, 1, 3, false);
     try std.testing.expectEqual(@as(f32, 0), reused[0].cpu); // another process under the same pid
-    var backwards = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 300, .disk_read = 0, .io_known = true }};
-    s.applyRates(&backwards, 1, false);
+    var backwards = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 300, .disk_read = 0, .io_known = true, .io_fresh = true }};
+    s.applyRates(&backwards, 1, 4, false);
     try std.testing.expectEqual(@as(f32, 0), backwards[0].cpu);
     try std.testing.expectEqual(@as(f32, 0), backwards[0].disk_bps);
     var after_gap = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "b", .start = 9, .cpu_ticks = 900 }};
-    s.applyRates(&after_gap, 1, true); // the list was closed: earlier ticks are stale
+    s.applyRates(&after_gap, 1, 5, true); // the list was closed: earlier ticks are stale
     try std.testing.expectEqual(@as(f32, 0), after_gap[0].cpu);
+}
+
+test "an idle process's I/O, read only now and then, is measured over the time since its last read" {
+    var s = Sampler.init(std.testing.allocator, std.testing.io);
+    defer s.deinit();
+    s.hz = 100;
+    var first = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .disk_write = 1000, .io_known = true, .io_fresh = true }};
+    s.applyRates(&first, 1, 10, false);
+    // Three samples with the counters kept from that read: no I/O shown.
+    for (11..14) |t| {
+        var kept = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .disk_write = 1000, .io_known = true }};
+        s.applyRates(&kept, 1, @floatFromInt(t), false);
+        try std.testing.expectEqual(@as(f32, 0), kept[0].disk_bps);
+    }
+    // Read again four seconds after the last read: 4000 bytes over four seconds.
+    var read = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .disk_write = 5000, .io_known = true, .io_fresh = true }};
+    s.applyRates(&read, 1, 14, false);
+    try std.testing.expectApproxEqAbs(@as(f32, 1000), read[0].disk_bps, 0.01);
+    // And the next read is over one second again.
+    var next = [_]Proc{.{ .pid = 10, .ppid = 1, .name = "a", .start = 5, .disk_write = 7000, .io_known = true, .io_fresh = true }};
+    s.applyRates(&next, 1, 15, false);
+    try std.testing.expectApproxEqAbs(@as(f32, 2000), next[0].disk_bps, 0.01);
 }
 
 test "history keeps one entry a second at any sampling speed" {
