@@ -1085,3 +1085,28 @@ test "hovering a control with a shortcut shows what it does and its keys" {
     try std.testing.expect(t.hasText("Shift"));
     try std.testing.expect(t.hasText("P"));
 }
+
+test "double-clicking a row shows its details, on Apps and Processes" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    const browser = t.findText("Browser") orelse return error.TextNotFound;
+    t.doubleClick(browser.x + 4, browser.y + browser.h / 2);
+    t.settle(0.2);
+    try std.testing.expect(state.details_open);
+    try std.testing.expectEqual(@as(i32, 100), state.selected_app); // that row's
+    try std.testing.expect(!state.expanded.contains(100)); // the arrow opens its processes, not this
+    state.details_open = false;
+    try t.clickText("Processes");
+    t.settle(0.2);
+    const daemon = t.findText("daemon") orelse return error.TextNotFound;
+    t.doubleClick(daemon.x + 4, daemon.y + daemon.h / 2);
+    t.settle(0.2);
+    try std.testing.expect(state.details_open);
+    try std.testing.expectEqual(@as(i32, 500), state.selected_proc);
+}

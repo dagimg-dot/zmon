@@ -94,7 +94,9 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, 
     const sel = s.selected_proc == p.pid;
     const r = table.row(c, k, i, sel);
     defer r.end();
-    if (r.interaction().clicked) {
+    const it = r.interaction();
+    if (it.double_clicked) s.details_open = true; // a row's details, as in Apps
+    if (it.clicked) {
         s.selected_proc = p.pid;
         c.focus = s.list_id;
         c.changed = true;

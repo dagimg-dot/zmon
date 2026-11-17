@@ -68,7 +68,9 @@ fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns,
         c.focus = s.list_id; // the keyboard carries on in the list
         c.changed = true;
     }
-    if (it.double_clicked and g.members.len > 1) s.pending_toggle = g.root;
+    // Double-click shows its details, as on every row; the arrow (or Right
+    // and Left) opens its processes.
+    if (it.double_clicked) s.details_open = true;
     const ink = table.ink(k, sel);
     const m: table.Metrics = .{ .cpu = s.cpuShown(g.cpu), .memory = g.memory, .disk = g.disk_bps, .disk_known = true, .threads = g.threads };
     table.describeRow(c, r, if (g.members.len > 1) c.print("{s}, {d} processes, {s}", .{ g.name, g.members.len, if (open) "open" else "closed" }) else g.name, m, sel);
@@ -120,7 +122,9 @@ fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, 
     const sel = s.selected_app == p.pid;
     const r = table.row(c, k, i, sel);
     defer r.end();
-    if (r.interaction().clicked) {
+    const it = r.interaction();
+    if (it.double_clicked) s.details_open = true;
+    if (it.clicked) {
         s.selected_app = p.pid;
         c.focus = s.list_id;
         c.changed = true;
