@@ -944,3 +944,74 @@ test "closing Background from its heading doesn't pull the rows out from under t
     t.settle(0.2);
     try std.testing.expect(!state.background_open);
 }
+
+/// Every page, every list key, the details and the searches, on whatever
+/// sample the state holds: nothing may crash, however little there is.
+fn pressEverything(t: *ui.Tester, state: *app_state.State) !void {
+    const pages = [_]app_state.Page{ .apps, .processes, .cpu, .memory, .disk, .network, .battery, .settings, .apps };
+    for (pages) |page| {
+        state.page = page;
+        t.settle(0.1);
+        for ([_]@TypeOf(t.ctx.input.key.?){ .down, .down, .up, .end, .home, .right, .right, .left, .left, .enter, .page_down, .page_up, .delete, .escape, .tab, .escape }) |key| t.key(key);
+        _ = t.shortcut(.{ .key = 'i', .cmd = true }); // details
+        t.settle(0.1);
+        state.confirm = false; // never confirm an End task here
+        t.setMods(.{ .shift = true });
+        t.key(.delete); // Force quit asks first too
+        t.setMods(.{});
+        state.confirm = false;
+        t.typeText("zz");
+        t.settle(0.1);
+        state.search.set(":65000");
+        state.rebuild();
+        t.settle(0.1);
+        state.search.clear();
+        state.rebuild();
+        _ = t.shortcut(.{ .key = ui.Shortcut.escape });
+    }
+}
+
+test "a machine with nothing to show (no processes, cores, disks, network or battery) draws every page" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var snap = @import("zmon-system").sampler.Snapshot.init(std.testing.allocator);
+    defer snap.deinit();
+    snap.samples = 1;
+    snap.procs_read = true;
+    state.useSample(&snap);
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try pressEverything(&t, &state);
+    state.page = .processes;
+    t.settle(0.1);
+    try std.testing.expect(t.containsText("can't see the processes")); // and says why
+}
+
+test "odd processes (a parent loop, empty names, an unknown user) draw every page" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = true;
+    var snap = @import("zmon-system").sampler.Snapshot.init(std.testing.allocator);
+    defer snap.deinit();
+    const a = snap.arena.allocator();
+    snap.procs = try a.dupe(core.Proc, &[_]core.Proc{
+        .{ .pid = 7, .ppid = 8, .name = "", .uid = 99999, .start = 1, .state = 'Z', .exe_replaced = true },
+        .{ .pid = 8, .ppid = 7, .name = "loop", .uid = 99999, .start = 2, .unit = "app-.scope" },
+        .{ .pid = 9, .ppid = 9, .name = "self-parent", .start = 3, .unit = "@.service" },
+    });
+    snap.samples = 2;
+    snap.procs_read = true;
+    snap.devices.battery = .{ .present = true, .percent = 0, .charging = true };
+    state.useSample(&snap);
+    state.details_open = true;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    for ([_]i32{ 7, 8, 9 }) |pid| {
+        state.selected_proc = pid;
+        state.selected_app = pid;
+        try pressEverything(&t, &state);
+    }
+}
