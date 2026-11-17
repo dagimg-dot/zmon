@@ -28,7 +28,7 @@ Every page, list and action has a key. Ctrl+? (or F1) shows them all in zmon.
 | Ctrl+, | Settings |
 | Ctrl+? or F1 | Keyboard shortcuts |
 | Ctrl+Shift+P | Pause or resume updates |
-| F9 | Collapse or expand the sidebar |
+| Ctrl+B | Collapse or expand the sidebar |
 | Ctrl+Q | Quit |
 | Ctrl+1, Ctrl+2 | Apps, Processes |
 | Ctrl+3 to Ctrl+6 | CPU, Memory, Disk, Network |

@@ -1,7 +1,8 @@
 //! The keyboard: zmon's shortcuts, read at the start of each frame, before
 //! any widget sees the keys. They follow GNOME's conventions where it has
-//! one (Ctrl+F, Ctrl+Q, Ctrl+?, F9, Ctrl+Page Up and Down), the browsers' for
-//! pages (Ctrl+1 to 6), and Task Manager's for ending a task (Delete).
+//! one (Ctrl+F, Ctrl+Q, Ctrl+?, Ctrl+Page Up and Down), the editors' for
+//! the sidebar (Ctrl+B), the browsers' for pages (Ctrl+1 to 6), and Task
+//! Manager's for ending a task (Delete).
 const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
@@ -42,7 +43,7 @@ pub fn handle(c: *ui.Context, s: *State) void {
     if (ctrl(c, 'q') or ctrl(c, 'w')) c.close_request = true;
     if (ctrl(c, ',')) s.open(.settings);
     if (c.shortcut(.{ .key = 'p', .cmd = true, .shift = true })) s.togglePause();
-    if (plain(c, .f9)) s.toggleSidebar();
+    if (ctrl(c, 'b')) s.toggleSidebar();
     if (ctrl(c, 'i') and s.onList()) s.details_open = !s.details_open;
     if (c.shortcut(.{ .key = '?', .cmd = true, .shift = true }) or ctrl(c, '?') or c.shortcut(.{ .key = '/', .cmd = true, .shift = true }) or plain(c, .f1))
         s.shortcuts_open = true;

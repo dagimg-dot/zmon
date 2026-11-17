@@ -22,7 +22,7 @@ pub const search: Shortcut = .{ .what = "Search apps and processes", .keys = &.{
 pub const settings: Shortcut = .{ .what = "Settings", .keys = &.{ "Ctrl", "," } };
 pub const help: Shortcut = .{ .what = "Keyboard shortcuts", .keys = &.{ "Ctrl", "?" }, .alt = &.{"F1"} };
 pub const pause: Shortcut = .{ .what = "Pause or resume updates", .keys = &.{ "Ctrl", "Shift", "P" } };
-pub const sidebar: Shortcut = .{ .what = "Collapse or expand the sidebar", .keys = &.{"F9"} };
+pub const sidebar: Shortcut = .{ .what = "Collapse or expand the sidebar", .keys = &.{ "Ctrl", "B" } };
 pub const quit: Shortcut = .{ .what = "Quit", .keys = &.{ "Ctrl", "Q" } };
 pub const apps: Shortcut = .{ .what = "Apps", .keys = &.{ "Ctrl", "1" } };
 pub const processes: Shortcut = .{ .what = "Processes", .keys = &.{ "Ctrl", "2" } };

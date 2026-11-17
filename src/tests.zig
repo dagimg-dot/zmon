@@ -1160,7 +1160,7 @@ fn pressLabel(t: *ui.Tester, label: []const u8) !void {
     t.settle(0.2);
 }
 
-test "the sidebar's button collapses it to icons, and F9 or the app icon expands it" {
+test "the sidebar's button collapses it to icons, and Ctrl+B or the app icon expands it" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();
     state.dark = false;
@@ -1174,10 +1174,10 @@ test "the sidebar's button collapses it to icons, and F9 or the app icon expands
     try pressLabel(&t, "Expand sidebar");
     try std.testing.expect(!state.settings.sidebar_collapsed);
     try std.testing.expect(t.hasText("Devices"));
-    t.key(.f9);
+    _ = t.shortcut(.{ .key = 'b', .cmd = true });
     t.settle(0.2);
     try std.testing.expect(state.settings.sidebar_collapsed);
-    t.key(.f9);
+    _ = t.shortcut(.{ .key = 'b', .cmd = true });
     t.settle(0.2);
     try std.testing.expect(t.hasText("Devices"));
 }
