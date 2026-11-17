@@ -12,6 +12,7 @@ const table = @import("../../ui/table.zig");
 const app_icon = @import("../../ui/app_icon.zig");
 const controls = @import("../../ui/controls.zig");
 const toolbar = @import("../toolbar.zig");
+const waiting = @import("../waiting.zig");
 
 const State = app.State;
 
@@ -36,6 +37,7 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.list_id = list.id;
     s.list_hovered = list.hovered;
     if (s.app_rows.len == 0) {
+        if (waiting.draw(c, s, k)) return;
         const query = s.search.text();
         return table.empty(c, k, if (query.len > 0) c.print("No app matches \"{s}\".", .{query}) else "No apps are open.");
     }

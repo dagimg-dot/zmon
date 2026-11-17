@@ -647,6 +647,16 @@ pub const State = struct {
         return s.confirm or s.shortcuts_open;
     }
 
+    /// Why a list can't show its rows yet: the sample shown didn't read the
+    /// processes (the first one, or one taken while no list was open), and
+    /// one that does is on its way, or isn't while updates are paused.
+    pub const Waiting = enum { no, reading, paused };
+
+    pub fn waiting(s: *const State) Waiting {
+        if (s.sample.procs_read) return .no;
+        return if (s.paused) .paused else .reading;
+    }
+
     /// Whether the page shown is one of the two lists.
     pub fn onList(s: *const State) bool {
         return s.page == .apps or s.page == .processes;

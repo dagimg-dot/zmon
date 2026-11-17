@@ -39,16 +39,15 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.list_id = list.id;
     s.list_hovered = list.hovered;
     if (s.proc_rows.len == 0) {
+        if (@import("../waiting.zig").draw(c, s, k)) return;
         const query = s.search.text();
         if (core.search.port(query)) |port| return portEmpty(c, s, k, port);
         return table.empty(c, k, if (core.search.port(query)) |port|
             portMessage(c, s, port)
         else if (query.len > 0)
             c.print("No process matches \"{s}\".", .{query})
-        else if (s.sample.samples > 0)
-            "zmon can't see the processes here: /proc may be hidden from other users (hidepid) or this may be a sandbox."
         else
-            "Reading the processes…");
+            "zmon can't see the processes here: /proc may be hidden from other users (hidepid) or this may be a sandbox.");
     }
     var rows = table.list(c, s.proc_rows.len, s.reveal);
     s.reveal = null;

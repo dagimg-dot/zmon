@@ -1057,6 +1057,57 @@ fn pressEverything(t: *ui.Tester, state: *app_state.State) !void {
     }
 }
 
+test "the lists wait with the live Ring until the processes are read, and only then say they are empty" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    var snap = @import("zmon-system").sampler.Snapshot.init(std.testing.allocator);
+    defer snap.deinit();
+    snap.samples = 1; // a sample, but without the process list
+    state.useSample(&snap);
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.hasText("Reading the processes…"));
+    try std.testing.expect(!t.containsText("No apps are open"));
+    // The Ring steps a tenth of a second at a time, not every refresh.
+    try std.testing.expect(t.ctx.frame_in.? <= 0.1);
+    try std.testing.expect(!t.ctx.animating);
+    state.page = .processes;
+    t.settle(0.1);
+    try std.testing.expect(t.hasText("Reading the processes…"));
+    try std.testing.expect(!t.containsText("can't see the processes"));
+
+    state.paused = true; // paused, the processes won't come: say so rather than wait
+    t.settle(0.1);
+    try std.testing.expect(t.containsText("Updates are paused"));
+    state.paused = false;
+
+    snap.procs_read = true; // read, and there are none
+    state.rebuild();
+    t.settle(0.1);
+    try std.testing.expect(t.containsText("can't see the processes"));
+    state.page = .apps;
+    t.settle(0.1);
+    try std.testing.expect(t.hasText("No apps are open."));
+}
+
+test "under Reduce motion the Ring holds still and asks for no frames of its own" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    state.settings.reduce_motion = true;
+    var snap = @import("zmon-system").sampler.Snapshot.init(std.testing.allocator);
+    defer snap.deinit();
+    snap.samples = 1;
+    state.useSample(&snap);
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try std.testing.expect(t.hasText("Reading the processes…"));
+    try std.testing.expect(t.ctx.frame_in == null or t.ctx.frame_in.? > 0.1);
+}
+
 test "a machine with nothing to show (no processes, cores, disks, network or battery) draws every page" {
     var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
     defer state.deinit();

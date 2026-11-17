@@ -42,6 +42,18 @@ pub fn reveal(c: *ui.Context, key: []const u8, open: bool) ?f32 {
     return p;
 }
 
+/// The step a stepped motion is at, one every `every` seconds by the view's
+/// clock, asking for a frame at the next step while it is asked for: a few
+/// frames a second, not one every refresh. Under Reduce motion it stays at 0
+/// and asks for none.
+pub fn step(c: *ui.Context, every: f64) u64 {
+    if (c.reduced_motion or c.reduce_motion) return 0;
+    const at = @max(0, c.time) / every;
+    const n: u64 = @intFromFloat(@floor(at));
+    c.frameIn(@floatCast((@as(f64, @floatFromInt(n + 1)) - at) * every));
+    return n;
+}
+
 /// `key` placed at `target` at once, as when the thing it moves has gone.
 pub fn jump(c: *ui.Context, key: []const u8, target: f32) void {
     const got = c.motion_store.get(c.gpa, idOf(key), c.frame) orelse return;

@@ -189,6 +189,16 @@ pub fn processName(c: *ui.Context, i: Ink, name: []const u8, program: []const u8
     if (programNote(name, program)) |note| ui.text(c, note, .{ .size = 11.5, .color = i.faint, .truncate = .ellipsis });
 }
 
+/// What an empty list shows while its first readings come: the live Ring
+/// over `message`, told to a screen reader as the message.
+pub fn loading(c: *ui.Context, k: theme.Colors, message: []const u8) void {
+    const d = ui.div(c).column().wFull().grow().itemsCenter().gap(14).pt(56);
+    defer d.end();
+    ui.access.describe(c, d.index, .{ .role = .static_text, .label = message });
+    @import("icon.zig").live(c, 44, k.tertiary);
+    ui.text(c, message, .{ .size = 13, .color = k.secondary });
+}
+
 /// A line in the middle of an empty list.
 pub fn empty(c: *ui.Context, k: theme.Colors, message: []const u8) void {
     const d = ui.div(c).column().wFull().grow().itemsCenter().pt(48);
