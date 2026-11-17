@@ -124,6 +124,8 @@ pub const DeviceWant = struct {
     cpu: bool = false,
     disks: bool = false,
     network: bool = false,
+    /// The battery each sample, not only every few seconds.
+    battery: bool = false,
 };
 
 test "inline text keeps what fits" {

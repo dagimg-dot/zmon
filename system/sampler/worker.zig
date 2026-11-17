@@ -180,7 +180,8 @@ const WantCell = struct {
             @as(u32, @intFromBool(want.kernel_threads)) << 1 |
             @as(u32, @intFromBool(want.devices.cpu)) << 2 |
             @as(u32, @intFromBool(want.devices.disks)) << 3 |
-            @as(u32, @intFromBool(want.devices.network)) << 4, .release);
+            @as(u32, @intFromBool(want.devices.network)) << 4 |
+            @as(u32, @intFromBool(want.devices.battery)) << 5, .release);
         c.pid.store(want.detail_pid, .release);
         c.port.store(want.port, .release);
         c.interval.store(@as(u32, want.interval_ms) | @as(u32, @intFromBool(want.paused)) << 31, .release);
@@ -199,7 +200,7 @@ const WantCell = struct {
             const want: root.Want = .{
                 .procs = flags & 1 != 0,
                 .kernel_threads = flags & 2 != 0,
-                .devices = .{ .cpu = flags & 4 != 0, .disks = flags & 8 != 0, .network = flags & 16 != 0 },
+                .devices = .{ .cpu = flags & 4 != 0, .disks = flags & 8 != 0, .network = flags & 16 != 0, .battery = flags & 32 != 0 },
                 .detail_pid = c.pid.load(.acquire),
                 .port = @intCast(c.port.load(.acquire)),
                 .interval_ms = @intCast(c.interval.load(.acquire) & 0xffff),
@@ -214,9 +215,10 @@ const WantCell = struct {
 test "what the app wants reads back whole" {
     var c: WantCell = .{};
     try std.testing.expect(c.get().procs and c.get().kernel_threads);
-    c.set(.{ .procs = false, .kernel_threads = true, .detail_pid = 42, .detail_start = 9001 });
+    c.set(.{ .procs = false, .kernel_threads = true, .devices = .{ .network = true, .battery = true }, .detail_pid = 42, .detail_start = 9001 });
     const w = c.get();
     try std.testing.expect(!w.procs and w.kernel_threads);
+    try std.testing.expect(std.meta.eql(w.devices, .{ .network = true, .battery = true }));
     try std.testing.expectEqual(@as(i32, 42), w.detail_pid);
     try std.testing.expectEqual(@as(u64, 9001), w.detail_start);
 }

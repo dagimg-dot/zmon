@@ -67,6 +67,7 @@ src/      the executable. The only place nanoui is imported.
   - One sampler, on its own thread (`system/sampler/worker.zig`): reading /proc costs 8 to 17 ms a sample on a slow-clocked core, which stalled a frame a second on the UI thread. Only the worker touches the `Sampler`; the app reads `Snapshot`s, handed over through a lock-free triple buffer, and the worker wakes the view when one is ready. Nothing polls while idle.
   - The app tells the worker what to read (`Worker.ask`): the process list only while a list is open or a quit is being watched. Tests leave `State.threaded` off and `tick` samples on the test's thread through the same hand-over (`Worker.step`).
   - Work that can block a frame, such as scanning a disk, runs on a worker thread and reports back through state.
+  - The battery is read every few seconds, and every sample only while its page is open: on Apple Silicon each of its files is a round trip to the SMC.
 - **Ending tasks.**
   - Only the user's own processes, and never pid 1, kernel threads or zmon itself. Quit with SIGTERM first and kill only on request.
   - Ask before adding anything that signals other users' processes or needs privilege.

@@ -1,7 +1,7 @@
 //! The device pages' readings: each disk, filesystem and network interface,
 //! clocks and temperatures, the battery and pressure stall. Only what the
-//! page shown asks for is read; the battery and pressure are cheap and read
-//! every sample.
+//! page shown asks for is read. Pressure is cheap and read every sample; the
+//! battery every few seconds, and every sample while its page is open.
 const std = @import("std");
 const core = @import("zmon-core");
 const files = @import("../../platform/root.zig").files;
@@ -18,6 +18,10 @@ pub const Reader = struct {
     /// The battery's /sys/class/power_supply folder, found once ("" if none).
     battery_dir: dev.Text(64) = .{},
     battery_checked: bool = false,
+    /// The battery as last read, and when it is read again. Its files can be
+    /// slow: through the Apple SMC each takes from 0.2 ms to over 1 ms.
+    battery: dev.Battery = .{},
+    battery_due: f64 = 0,
     /// Temperature inputs found once: their paths and labels.
     sensor_paths: [dev.max_sensors]dev.Text(64) = undefined,
     sensor_labels: [dev.max_sensors]dev.Text(48) = undefined,
@@ -36,7 +40,11 @@ pub const Reader = struct {
 
     /// Fills `out` with what `want` asks for, rates over `dt` seconds.
     pub fn read(r: *Reader, io: std.Io, out: *dev.Devices, want: dev.DeviceWant, dt: f64, now: f64, interfaces: *network.Interfaces) void {
-        out.battery = r.readBattery(io);
+        if (want.battery or now >= r.battery_due) {
+            r.battery = r.readBattery(io);
+            r.battery_due = now + slow_every;
+        }
+        out.battery = r.battery;
         out.pressure = readPressure(io);
         out.core_count = 0;
         out.sensor_count = 0;
@@ -477,4 +485,28 @@ test "on this machine the readers return sane values" {
     for (out.filesystemList()) |f| try std.testing.expect(f.free <= f.total);
     for (out.sensorList()) |s| try std.testing.expect(s.celsius > -50 and s.celsius < 200);
     if (out.battery.present) try std.testing.expect(out.battery.percent >= 0 and out.battery.percent <= 100);
+}
+
+test "the battery is read every few seconds, and every sample while its page is open" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "capacity", .data = "50\n" });
+    var root_buf: [64]u8 = undefined;
+    var r: Reader = .{ .battery_checked = true };
+    r.battery_dir = .init(try std.fmt.bufPrint(&root_buf, ".zig-cache/tmp/{s}", .{tmp.sub_path}));
+    var out: dev.Devices = .{};
+    var ifs: network.Interfaces = .{};
+    r.read(io, &out, .{}, 1, 100, &ifs);
+    try std.testing.expectEqual(@as(f32, 50), out.battery.percent);
+    try tmp.dir.writeFile(io, .{ .sub_path = "capacity", .data = "49\n" });
+    r.read(io, &out, .{}, 1, 101, &ifs);
+    try std.testing.expectEqual(@as(f32, 50), out.battery.percent); // kept, not read again
+    r.read(io, &out, .{ .battery = true }, 1, 102, &ifs);
+    try std.testing.expectEqual(@as(f32, 49), out.battery.percent); // its page is open
+    try tmp.dir.writeFile(io, .{ .sub_path = "capacity", .data = "48\n" });
+    r.read(io, &out, .{}, 1, 106, &ifs);
+    try std.testing.expectEqual(@as(f32, 49), out.battery.percent);
+    r.read(io, &out, .{}, 1, 107, &ifs);
+    try std.testing.expectEqual(@as(f32, 48), out.battery.percent); // five seconds on
 }

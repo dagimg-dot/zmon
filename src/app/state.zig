@@ -331,7 +331,7 @@ pub const State = struct {
         var want: system.sampler.Want = .{
             .procs = s.onList() or s.confirm or s.quit_watch != null,
             .kernel_threads = s.settings.show_kernel_threads,
-            .devices = .{ .cpu = s.page == .cpu, .disks = s.page == .disk, .network = s.page == .network },
+            .devices = .{ .cpu = s.page == .cpu, .disks = s.page == .disk, .network = s.page == .network, .battery = s.page == .battery },
             .interval_ms = @backingInt(s.settings.interval),
             .paused = s.paused,
         };
