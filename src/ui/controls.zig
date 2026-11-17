@@ -41,6 +41,8 @@ pub const ButtonOptions = struct {
     /// Only the icon shows; the label is its tooltip and its name for a
     /// screen reader.
     compact: bool = false,
+    /// No border, only a hover: an icon button that sits in a header.
+    quiet: bool = false,
     /// Its keyboard shortcut: hovering shows it, beside the label.
     shortcut: ?shortcut_mod.Shortcut = null,
 };
@@ -49,7 +51,8 @@ pub const ButtonOptions = struct {
 pub fn button(c: *ui.Context, k: theme.Colors, label: []const u8, opts: ButtonOptions) bool {
     ui.key(c, label);
     const compact = opts.compact and opts.icon.len > 0;
-    var b = ui.div(c).row().h(30).px(if (compact) 9 else 12).gap(6).itemsCenter().rounded(8).border(if (opts.danger and !opts.disabled) k.danger else k.border).control();
+    var b = ui.div(c).row().h(30).px(if (compact) 9 else 12).gap(6).itemsCenter().rounded(8).control();
+    if (!opts.quiet) b = b.border(if (opts.danger and !opts.disabled) k.danger else k.border);
     if (opts.shortcut) |s| {
         b = shortcut_mod.tooltip(c, b, k, label, s);
     } else if (compact) b = b.tooltip(label, .{});

@@ -11,6 +11,7 @@ const app = @import("state.zig");
 const theme = @import("../ui/theme.zig");
 const controls = @import("../ui/controls.zig");
 const app_icon = @import("../ui/app_icon.zig");
+const shortcut = @import("../ui/shortcut.zig");
 
 const State = app.State;
 /// The pane's width when it hasn't been dragged, and the least and the
@@ -70,8 +71,8 @@ pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
     defer box.end();
     const col = ui.div(c).column().wFull().px(18).py(16).gap(14);
     defer col.end();
-    const target = s.detailTarget() orelse return empty(c, k, "Select an app or a process to see its details.");
-    const p = s.sample.find(target.pid) orelse return empty(c, k, "It has ended.");
+    const target = s.detailTarget() orelse return empty(c, s, k, "Select an app or a process to see its details.");
+    const p = s.sample.find(target.pid) orelse return empty(c, s, k, "It has ended.");
     const group = s.selectedGroup();
     header(c, s, k, p.*, group);
     // A pointer into the sample, not a copy: the socket lines are kept
@@ -198,9 +199,20 @@ fn warning(c: *ui.Context, k: theme.Colors, text: []const u8) void {
     ui.text(c, text, .{ .size = 12.5, .color = k.text, .wrap = true });
 }
 
-fn empty(c: *ui.Context, k: theme.Colors, message: []const u8) void {
-    ui.text(c, "Details", .{ .size = 15, .weight = .semibold, .color = k.text });
+fn empty(c: *ui.Context, s: *State, k: theme.Colors, message: []const u8) void {
+    {
+        const r = ui.div(c).row().wFull().itemsCenter();
+        defer r.end();
+        ui.text(c, "Details", .{ .size = 15, .weight = .semibold, .color = k.text });
+        ui.spacer(c);
+        closeButton(c, s, k);
+    }
     ui.text(c, message, .{ .size = 12.5, .color = k.secondary, .wrap = true });
+}
+
+/// The pane's ✕, for whoever doesn't use Ctrl+I: its tooltip teaches it.
+fn closeButton(c: *ui.Context, s: *State, k: theme.Colors) void {
+    if (controls.button(c, k, "Close details", .{ .icon = "xmark", .compact = true, .quiet = true, .shortcut = shortcut.details })) s.details_open = false;
 }
 
 fn header(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, group: ?*const @import("zmon-system").apps.Group) void {
@@ -208,10 +220,11 @@ fn header(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, group: ?*con
     defer r.end();
     if (s.ownerOf(indexOf(s, p.pid))) |g| app_icon.draw(c, &s.icons, k, g.*);
     const words = ui.div(c).column().grow().gap(2);
-    defer words.end();
     ui.text(c, if (group) |g| g.name else p.name, .{ .size = 15, .weight = .semibold, .color = k.text, .wrap = true });
     const note = if (p.program.len > 0 and !std.mem.eql(u8, p.program, p.name)) c.print("{s} · process {d}", .{ p.program, p.pid }) else c.print("Process {d}", .{p.pid});
     ui.text(c, note, .{ .size = 12, .color = k.secondary, .wrap = true });
+    words.end();
+    closeButton(c, s, k);
 }
 
 fn indexOf(s: *const State, pid: i32) u32 {

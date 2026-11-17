@@ -1110,3 +1110,29 @@ test "double-clicking a row shows its details, on Apps and Processes" {
     try std.testing.expect(state.details_open);
     try std.testing.expectEqual(@as(i32, 500), state.selected_proc);
 }
+
+test "the details pane's close button closes it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    state.page = .processes;
+    state.details_open = true;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    t.settle(0.2);
+    // Nothing selected: the pane's title row still has its close button.
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var els: std.ArrayList(ui.access.Element) = .empty;
+    try ui.access.tree(&t.ctx, arena.allocator(), &els);
+    const close = for (els.items) |e| {
+        if (std.mem.eql(u8, e.label, "Close details")) break e;
+    } else return error.NoCloseButton;
+    const r = t.ctx.rects.get(close.id) orelse return error.NoRect;
+    t.click(r.x + r.w / 2, r.y + r.h / 2);
+    t.settle(0.2);
+    try std.testing.expect(!state.details_open);
+}
