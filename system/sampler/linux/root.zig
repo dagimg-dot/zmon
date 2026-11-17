@@ -9,6 +9,7 @@ pub const load = @import("load.zig");
 pub const machine = @import("machine.zig");
 pub const details = @import("details.zig");
 pub const devices = @import("devices.zig");
+pub const origin = @import("origin.zig");
 
 pub const clockTicks = units.clockTicks;
 pub const pageSize = units.pageSize;
@@ -24,4 +25,5 @@ test {
     _ = machine;
     _ = details;
     _ = devices;
+    _ = origin;
 }

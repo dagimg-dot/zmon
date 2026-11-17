@@ -25,6 +25,9 @@ pub const Proc = struct {
     state: u8 = '?',
     /// Scheduling priority, -20 (most favoured) to 19.
     nice: i8 = 0,
+    /// Its executable was replaced on disk since it started (an update): it
+    /// runs the old one until restarted.
+    exe_replaced: bool = false,
     threads: u32 = 1,
     /// Memory that belongs to the process alone (resident minus shared), bytes.
     memory: u64 = 0,
@@ -55,6 +58,25 @@ pub const Details = struct {
     read_total: u64 = 0,
     write_total: u64 = 0,
     io_known: bool = false,
+    /// The unit that keeps it, from its file: its Description and path.
+    unit_description: []const u8 = "",
+    unit_file: []const u8 = "",
+    /// The Git repository its working folder is in, and the branch.
+    repo: []const u8 = "",
+    branch: []const u8 = "",
+    /// What it listens on and is connected to; known only for the user's
+    /// own processes (`sockets_known`).
+    sockets: [16]Socket = undefined,
+    socket_count: u8 = 0,
+    sockets_known: bool = false,
+};
+
+/// A network socket a process holds, as one line.
+pub const Socket = struct {
+    proto: @import("devices.zig").Text(4) = .{},
+    /// "127.0.0.1:5000", or "local → remote" when connected.
+    text: @import("devices.zig").Text(112) = .{},
+    listening: bool = false,
 };
 
 pub const Memory = struct {

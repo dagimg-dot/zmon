@@ -25,9 +25,12 @@ pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
     const p = s.sample.find(target.pid) orelse return empty(c, k, "It has ended.");
     const group = s.selectedGroup();
     header(c, s, k, p.*, group);
-    const d = if (s.sample.detail) |x| (if (x.pid == p.pid and x.start == p.start) x else null) else null;
+    // A pointer into the sample, not a copy: the socket lines are kept
+    // inline, and text drawn after this returns must still be there.
+    const d: ?*const core.Details = if (s.sample.detail) |*x| (if (x.pid == p.pid and x.start == p.start) x else null) else null;
     if (d) |x| if (x.cmdline.len > 0) commandLine(c, k, x.cmdline);
     var b: [6][32]u8 = undefined;
+    why(c, s, k, p.*, d);
     section(c, k, "Process");
     {
         const rows = ui.div(c).column().wFull().gap(7);
@@ -61,6 +64,89 @@ pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
             if (x.cgroup.len > 0) path(c, k, "Control group", x.cgroup);
         }
     }
+}
+
+/// Why it is running, as witr asks it: the parents that started it, what
+/// keeps it running, what it works on and holds open, and anything amiss.
+fn why(c: *ui.Context, s: *State, k: theme.Colors, p: core.Proc, d: ?*const core.Details) void {
+    section(c, k, "Why it's running");
+    const rows = ui.div(c).column().wFull().gap(10);
+    defer rows.end();
+    // The chain from the first process down to this one.
+    var chain: [12]*const core.Proc = undefined;
+    var n: usize = 0;
+    var at: ?*const core.Proc = s.sample.find(p.pid);
+    while (at) |q| {
+        if (n == chain.len) break;
+        chain[n] = q;
+        n += 1;
+        if (q.ppid <= 0) break;
+        at = s.sample.find(q.ppid);
+    }
+    {
+        var w: std.Io.Writer.Allocating = .init(c.alloc());
+        var i = n;
+        while (i > 0) {
+            i -= 1;
+            w.writer.print("{s}{s} ({d})", .{ if (i + 1 < n) " → " else "", chain[i].name, chain[i].pid }) catch {};
+        }
+        path(c, k, "Started by", w.written());
+    }
+    if (source(c, p, chain[0..n], d)) |text| path(c, k, "Kept running by", text);
+    if (d) |x| {
+        if (x.unit_file.len > 0) path(c, k, "Unit file", x.unit_file);
+        if (x.repo.len > 0) path(c, k, "Working on", if (x.branch.len > 0) c.print("{s}, branch {s}", .{ x.repo, x.branch }) else x.repo);
+        if (x.sockets_known) {
+            if (x.socket_count > 0) {
+                const col = ui.div(c).column().wFull().gap(3);
+                defer col.end();
+                ui.text(c, "Network", .{ .size = 12.5, .color = k.secondary });
+                for (x.sockets[0..x.socket_count], 0..) |*sock, i| {
+                    ui.key(c, c.print("sock{d}", .{i}));
+                    ui.text(c, c.print("{s} {s} {s}", .{ if (sock.listening) "Listening on" else "Connected", sock.text.slice(), sock.proto.slice() }), .{ .size = 12.5, .color = k.text, .wrap = true });
+                }
+            }
+        } else if (!p.kthread) path(c, k, "Network", "Only your own processes' connections can be read.");
+    }
+    // What is worth knowing at a glance.
+    if (p.uid == 0 and !p.kthread) warning(c, k, "Runs as root: it can change anything on this machine.");
+    if (p.exe_replaced) warning(c, k, "Its program was updated after it started: it runs the old one until restarted.");
+    if (p.state == 'Z') warning(c, k, "It has ended, but the process that started it hasn't collected it yet.");
+}
+
+/// What keeps it running, in words: its systemd unit, container, session or
+/// whatever its parents say.
+fn source(c: *ui.Context, p: core.Proc, chain: []const *const core.Proc, d: ?*const core.Details) ?[]const u8 {
+    if (p.kthread) return "The kernel itself: this is one of its own threads.";
+    const grouping = @import("zmon-system").apps.grouping;
+    const described = if (d) |x| x.unit_description else "";
+    switch (grouping.classify(p.unit)) {
+        .app => |id| return c.print("The desktop, which started it as an app ({s})", .{id}),
+        .service => |name| {
+            for ([_][2][]const u8{ .{ "docker-", "A Docker container" }, .{ "libpod-", "A Podman container" } }) |kind| {
+                if (std.mem.startsWith(u8, name, kind[0])) return c.print("{s} ({s})", .{ kind[1], name[kind[0].len..@min(name.len, kind[0].len + 12)] });
+            }
+            return if (described.len > 0) c.print("The service {s}: {s}", .{ p.unit, described }) else c.print("The service {s}", .{p.unit});
+        },
+        .none => {},
+    }
+    for (chain) |q| {
+        if (std.mem.eql(u8, q.comm, "sshd")) return "A remote login over SSH";
+        if (std.mem.eql(u8, q.comm, "cron") or std.mem.eql(u8, q.comm, "crond")) return "A scheduled job (cron)";
+    }
+    if (std.mem.startsWith(u8, p.unit, "session-")) return "Your login session";
+    if (std.mem.startsWith(u8, p.unit, "user@")) return "Your user's service manager";
+    return null;
+}
+
+fn warning(c: *ui.Context, k: theme.Colors, text: []const u8) void {
+    ui.key(c, text);
+    const r = ui.div(c).row().wFull().gap(8).p(10).rounded(8).bg(k.danger.alpha(0.12));
+    defer r.end();
+    ui.icon(c, "exclamationmark.triangle", .{ .size = 13, .frame = 16, .color = k.danger });
+    const words = ui.div(c).column().grow();
+    defer words.end();
+    ui.text(c, text, .{ .size = 12.5, .color = k.text, .wrap = true });
 }
 
 fn empty(c: *ui.Context, k: theme.Colors, message: []const u8) void {

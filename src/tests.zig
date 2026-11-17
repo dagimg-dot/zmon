@@ -877,3 +877,52 @@ test "a narrow window keeps the sidebar's pages as icons, still named for the ke
     for (els.items) |e| settings = settings or (e.role == .tab and std.mem.eql(u8, e.label, "Settings"));
     try std.testing.expect(settings);
 }
+
+test "searching :port finds the process listening on it" {
+    const linux = std.os.linux;
+    // A socket of the test's own, listening on a port the kernel picks.
+    const fd: i32 = @intCast(linux.socket(linux.AF.INET, linux.SOCK.STREAM, 0));
+    defer _ = linux.close(fd);
+    var addr: linux.sockaddr.in = .{ .port = 0, .addr = std.mem.nativeToBig(u32, 0x7f000001) };
+    try std.testing.expectEqual(@as(usize, 0), linux.bind(fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in)));
+    try std.testing.expectEqual(@as(usize, 0), linux.listen(fd, 1));
+    var len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
+    _ = linux.getsockname(fd, @ptrCast(&addr), &len);
+    const port = std.mem.bigToNative(u16, addr.port);
+
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.page = .processes;
+    var b: [16]u8 = undefined;
+    state.search.set(try std.fmt.bufPrint(&b, ":{d}", .{port}));
+    var now: f64 = 0;
+    for (0..3) |_| {
+        _ = state.tick(now);
+        now += 1;
+    }
+    const me = linux.getpid();
+    var found = false;
+    for (state.proc_rows) |r| found = found or state.sample.procs[r].pid == me;
+    try std.testing.expect(found);
+}
+
+test "the details say why a process runs: its parents, its service, and a warning for root" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    var t: ui.Tester = undefined;
+    try tester(&t, &state);
+    defer t.deinit();
+    try t.clickText("Processes");
+    state.details_open = true;
+    state.selected_proc = 500;
+    t.settle(0.3);
+    try std.testing.expect(t.hasText("Why it's running"));
+    try std.testing.expect(t.hasText("systemd (1) → daemon (500)"));
+    try std.testing.expect(t.hasText("The service daemon.service"));
+    state.selected_proc = 1;
+    t.settle(0.3);
+    try std.testing.expect(t.hasText("Runs as root: it can change anything on this machine."));
+}

@@ -2,6 +2,15 @@
 const std = @import("std");
 const Proc = @import("types.zig").Proc;
 
+/// The port a search asks about: ":8080" (a colon, then a number).
+pub fn port(search: []const u8) ?u16 {
+    const query = std.mem.trim(u8, search, " ");
+    const digits = std.mem.cutPrefix(u8, query, ":") orelse return null;
+    if (digits.len == 0) return null;
+    const n = std.fmt.parseInt(u16, digits, 10) catch return null;
+    return if (n > 0) n else null;
+}
+
 /// Whether `text` holds `part`, ignoring ASCII case.
 pub fn containsIgnoreCase(text: []const u8, part: []const u8) bool {
     if (part.len > text.len) return false;
@@ -21,6 +30,15 @@ pub fn matches(p: Proc, search: []const u8) bool {
     var b: [16]u8 = undefined;
     const pid = std.fmt.bufPrint(&b, "{d}", .{p.pid}) catch return false;
     return std.mem.startsWith(u8, pid, query);
+}
+
+test "a search for :8080 is a search for a port" {
+    try std.testing.expectEqual(@as(?u16, 8080), port(":8080"));
+    try std.testing.expectEqual(@as(?u16, 22), port(" :22 "));
+    try std.testing.expect(port("8080") == null);
+    try std.testing.expect(port(":") == null);
+    try std.testing.expect(port(":99999") == null);
+    try std.testing.expect(port(":http") == null);
 }
 
 test "a search matches part of a name in any case, or the start of a pid" {

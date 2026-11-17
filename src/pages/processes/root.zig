@@ -38,7 +38,9 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.list_hovered = list.hovered;
     if (s.proc_rows.len == 0) {
         const query = s.search.text();
-        return table.empty(c, k, if (query.len > 0)
+        return table.empty(c, k, if (core.search.port(query)) |port|
+            portMessage(c, s, port)
+        else if (query.len > 0)
             c.print("No process matches \"{s}\".", .{query})
         else if (s.sample.samples > 0)
             "zmon can't see the processes here: /proc may be hidden from other users (hidepid) or this may be a sandbox."
@@ -49,6 +51,17 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
     s.reveal = null;
     while (rows.next()) |i| procRow(c, s, k, &columns, s.proc_rows[i], i);
     rows.end();
+}
+
+/// What a ":port" search found when no row shows: nothing yet, nothing at
+/// all, or a process of another user, which zmon can't name without root.
+fn portMessage(c: *ui.Context, s: *State, port: u16) []const u8 {
+    if (s.sample.port != port) return c.print("Looking for port {d}…", .{port});
+    if (s.sample.port_holders.other_uid) |uid| {
+        var b: [16]u8 = undefined;
+        return c.print("Port {d} is held by a process of {s}. Which one can only be seen with root.", .{ port, s.userName(&b, uid) });
+    }
+    return c.print("Nothing holds port {d}.", .{port});
 }
 
 fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {

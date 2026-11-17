@@ -14,6 +14,7 @@ pub const themes = @import("theme/root.zig");
 pub const Proc = types.Proc;
 pub const Memory = types.Memory;
 pub const Details = types.Details;
+pub const Socket = types.Socket;
 pub const Ring = ring.Ring;
 pub const history_len = ring.history_len;
 

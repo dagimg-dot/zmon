@@ -4,13 +4,15 @@ const std = @import("std");
 const core = @import("zmon-core");
 const files = @import("../../platform/root.zig").files;
 const process = @import("process.zig");
+const origin = @import("origin.zig");
+const env = @import("../../platform/root.zig").env;
 
 pub const Details = core.Details;
 
 /// The details of `pid`, if it is still the process that started at `start`.
 /// Text is copied into `a`. Another user's working folder and I/O totals are
 /// refused by the kernel and left empty.
-pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64) ?Details {
+pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64, unit: []const u8) ?Details {
     var dir = std.Io.Dir.cwd().openDir(io, "/proc", .{}) catch return null;
     defer dir.close(io);
     var path: [64]u8 = undefined;
@@ -34,6 +36,20 @@ pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64) ?Details {
         d.write_total = core.text.field(text, "write_bytes:");
         d.io_known = true;
     } else |_| {}
+    // Why it runs: the unit that keeps it, the repository it works in, the
+    // sockets it holds.
+    if (origin.unitInfo(io, a, unit, env.home())) |u| {
+        d.unit_description = u.description;
+        d.unit_file = u.file;
+    }
+    if (origin.gitRepo(io, a, d.cwd)) |g| {
+        d.repo = g.name;
+        d.branch = g.branch;
+    }
+    if (origin.sockets(io, pid, &d.sockets)) |n| {
+        d.socket_count = @intCast(n);
+        d.sockets_known = true;
+    }
     return d;
 }
 
@@ -73,8 +89,9 @@ test "this test's own details can be read, and a wrong start time reads nothing"
     var buf: [1024]u8 = undefined;
     var path: [32]u8 = undefined;
     const st = process.parseStat(try files.read(std.testing.io, .cwd(), try std.fmt.bufPrint(&path, "/proc/{d}/stat", .{me}), &buf)).?;
-    const d = read(std.testing.io, arena.allocator(), me, st.start) orelse return error.NoDetails;
+    const d = read(std.testing.io, arena.allocator(), me, st.start, "") orelse return error.NoDetails;
     try std.testing.expect(d.cmdline.len > 0);
     try std.testing.expect(d.io_known);
-    try std.testing.expect(read(std.testing.io, arena.allocator(), me, st.start + 1) == null);
+    try std.testing.expect(d.sockets_known); // our own open files can be read
+    try std.testing.expect(read(std.testing.io, arena.allocator(), me, st.start + 1, "") == null);
 }

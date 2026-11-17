@@ -277,6 +277,7 @@ pub const State = struct {
             want.detail_pid = d.pid;
             want.detail_start = d.start;
         }
+        if (s.onList()) want.port = core.search.port(s.search.text()) orelse 0;
         // Opening a list, or selecting another process with the details
         // open, reads at once rather than at the next second.
         // A device page whose readings the last sample didn't take counts as stale too.
@@ -284,12 +285,13 @@ pub const State = struct {
             !std.meta.eql(want.devices, s.asked.devices);
         const changed = want.procs != s.asked.procs or want.kernel_threads != s.asked.kernel_threads or
             !std.meta.eql(want.devices, s.asked.devices);
-        const new_detail = want.detail_pid != s.asked.detail_pid or want.detail_start != s.asked.detail_start;
-        s.worker.ask(want, (stale and changed) or (new_detail and want.detail_pid != 0));
+        const new_detail = want.detail_pid != s.asked.detail_pid or want.detail_start != s.asked.detail_start or
+            (want.port != s.asked.port and want.port != 0);
+        s.worker.ask(want, (stale and changed) or (new_detail and (want.detail_pid != 0 or want.port != 0)));
         s.asked = want;
         var wait: f64 = 1.0; // a sample wakes the view itself; this is a fallback
         if (!s.worker.running()) {
-            const detail_due = want.detail_pid != 0 and new_detail;
+            const detail_due = (want.detail_pid != 0 or want.port != 0) and new_detail;
             if (s.sample.samples == 0 or now >= s.next_sample or stale or detail_due) {
                 s.worker.step(); // `now` only schedules: rates use the machine's clock
                 // On the second, not a second after each late frame; soon when the
@@ -417,7 +419,22 @@ pub const State = struct {
     };
 
     /// Whether an app matches the search: its name, or any of its processes.
+    /// Whether the process matches the search: by name or pid, or for a
+    /// ":port" search, by holding that port.
+    fn procMatches(s: *const State, p: core.Proc) bool {
+        if (core.search.port(s.search.text())) |port| {
+            if (s.sample.port != port) return false;
+            const h = s.sample.port_holders;
+            return std.mem.indexOfScalar(i32, h.pids[0..h.count], p.pid) != null;
+        }
+        return core.search.matches(p, s.search.text());
+    }
+
     fn appMatches(s: *const State, g: apps.Group) bool {
+        if (core.search.port(s.search.text()) != null) {
+            for (g.members) |m| if (s.procMatches(s.sample.procs[m])) return true;
+            return false;
+        }
         const query = std.mem.trim(u8, s.search.text(), " ");
         if (query.len == 0 or core.search.containsIgnoreCase(g.name, query)) return true;
         for (g.members) |m| if (core.search.matches(s.sample.procs[m], query)) return true;
@@ -475,7 +492,7 @@ pub const State = struct {
         var rows: std.ArrayList(u32) = .empty;
         for (procs, 0..) |p, i| {
             if (p.kthread and !s.settings.show_kernel_threads) continue;
-            if (!core.search.matches(p, s.search.text())) continue;
+            if (!s.procMatches(p)) continue;
             try rows.append(a, @intCast(i));
         }
         std.mem.sort(u32, rows.items, ProcOrder{ .o = s.proc_order, .procs = procs, .users = &s.users }, ProcOrder.less);

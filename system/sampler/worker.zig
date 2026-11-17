@@ -157,6 +157,7 @@ const WantCell = struct {
     seq: std.atomic.Value(u32) = .init(0),
     flags: std.atomic.Value(u32) = .init(3),
     pid: std.atomic.Value(i32) = .init(0),
+    port: std.atomic.Value(u32) = .init(0),
     start: std.atomic.Value(u64) = .init(0),
 
     /// One writer only: the app's thread.
@@ -168,6 +169,7 @@ const WantCell = struct {
             @as(u32, @intFromBool(want.devices.disks)) << 3 |
             @as(u32, @intFromBool(want.devices.network)) << 4, .release);
         c.pid.store(want.detail_pid, .release);
+        c.port.store(want.port, .release);
         c.start.store(want.detail_start, .release);
         _ = c.seq.fetchAdd(1, .acq_rel);
     }
@@ -185,6 +187,7 @@ const WantCell = struct {
                 .kernel_threads = flags & 2 != 0,
                 .devices = .{ .cpu = flags & 4 != 0, .disks = flags & 8 != 0, .network = flags & 16 != 0 },
                 .detail_pid = c.pid.load(.acquire),
+                .port = @intCast(c.port.load(.acquire)),
                 .detail_start = c.start.load(.acquire),
             };
             if (c.seq.load(.acquire) == before) return want;

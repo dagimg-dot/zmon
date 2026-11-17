@@ -49,6 +49,8 @@ pub const Want = struct {
     kernel_threads: bool = true,
     /// The device page's costlier readings (each disk, interface, clock...).
     devices: core.devices.DeviceWant = .{},
+    /// A port being searched for (0: none): who holds it is looked up.
+    port: u16 = 0,
     /// The process the details pane shows (0: none), and when it started.
     detail_pid: i32 = 0,
     detail_start: u64 = 0,
@@ -84,6 +86,8 @@ pub const Sampler = struct {
     procs_read: bool = false,
     /// The details of `want.detail_pid`, in the arena, when it asked for them.
     detail: ?core.Details = null,
+    /// Who holds `want.port`.
+    port_holders: backend.origin.Holders = .{},
     history: History = .{},
 
     hz: u64 = 100,
@@ -139,7 +143,8 @@ pub const Sampler = struct {
         const first = s.samples == 0;
         _ = s.arena.reset(.retain_capacity);
         s.collectProcs(dt, first);
-        s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start) else null;
+        s.detail = if (s.want.detail_pid > 0) backend.details.read(s.io, s.arena.allocator(), s.want.detail_pid, s.want.detail_start, s.unitOf(s.want.detail_pid)) else null;
+        s.port_holders = if (s.want.port > 0) backend.origin.holders(s.io, s.want.port, backend.process.currentUid()) else .{};
         s.collectCpu();
         s.memory = backend.memory.read(s.io);
         s.collectDisk(dt, first);
@@ -165,6 +170,10 @@ pub const Sampler = struct {
         else
             0);
         s.history.battery.push(s.devices.battery.percent);
+    }
+
+    fn unitOf(s: *const Sampler, pid: i32) []const u8 {
+        return if (s.find(pid)) |p| p.unit else "";
     }
 
     /// The process with this pid in the current sample.
@@ -271,6 +280,9 @@ pub const Snapshot = struct {
     procs_read: bool = false,
     /// The selected process's details, when the app asked for them.
     detail: ?core.Details = null,
+    /// The port searched for, and who holds it.
+    port: u16 = 0,
+    port_holders: backend.origin.Holders = .{},
     /// Clock ticks a second, to turn start times into ages.
     hz: u64 = 100,
     devices: core.devices.Devices = .{},
@@ -329,12 +341,18 @@ pub const Snapshot = struct {
         sn.procs_read = s.procs_read;
         sn.hz = s.hz;
         sn.devices = s.devices;
+        sn.port = s.want.port;
+        sn.port_holders = s.port_holders;
         sn.detail = null;
         if (s.detail) |d| {
             var c = d;
             c.cmdline = a.dupe(u8, d.cmdline) catch "";
             c.cwd = a.dupe(u8, d.cwd) catch "";
             c.cgroup = a.dupe(u8, d.cgroup) catch "";
+            c.unit_description = a.dupe(u8, d.unit_description) catch "";
+            c.unit_file = a.dupe(u8, d.unit_file) catch "";
+            c.repo = a.dupe(u8, d.repo) catch "";
+            c.branch = a.dupe(u8, d.branch) catch "";
             sn.detail = c;
         }
         sn.history = s.history;

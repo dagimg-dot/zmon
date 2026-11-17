@@ -89,8 +89,8 @@ pub const load = struct {
 };
 
 pub const details = struct {
-    pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64) ?core.Details {
-        _ = .{ io, a, pid, start };
+    pub fn read(io: std.Io, a: std.mem.Allocator, pid: i32, start: u64, unit: []const u8) ?core.Details {
+        _ = .{ io, a, pid, start, unit };
         return null;
     }
 };
@@ -101,4 +101,12 @@ pub const devices = struct {
             _ = .{ r, io, out, want, dt, now, interfaces };
         }
     };
+};
+
+pub const origin = struct {
+    pub const Holders = struct { pids: [16]i32 = undefined, count: u8 = 0, other_uid: ?u32 = null };
+    pub fn holders(io: std.Io, port: u16, me: u32) Holders {
+        _ = .{ io, port, me };
+        return .{};
+    }
 };

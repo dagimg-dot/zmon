@@ -120,6 +120,7 @@ const Known = struct {
     exe: []const u8,
     /// Owned by the reader; see `Proc.program`.
     program: []const u8 = "",
+    exe_replaced: bool = false,
     /// Owned by the reader; see `Proc.unit`.
     unit: []const u8 = "",
     /// The scan that last met it.
@@ -206,6 +207,7 @@ pub const Reader = struct {
                 .comm = comm,
                 .exe = known.exe,
                 .program = known.program,
+                .exe_replaced = known.exe_replaced,
                 .unit = known.unit,
                 .nice = st.nice,
                 .uid = known.uid,
@@ -272,6 +274,7 @@ pub const Reader = struct {
             var exe_buf: [512]u8 = undefined;
             if (files.link(io, dir, std.fmt.bufPrint(&path, "{d}/exe", .{pid}) catch "", &exe_buf)) |target| {
                 fresh.exe = r.gpa.dupe(u8, exePath(target)) catch "";
+                fresh.exe_replaced = std.mem.endsWith(u8, target, " (deleted)");
             }
             // Another user's executable can't be read, but the command line can.
             var program: []const u8 = std.fs.path.basename(fresh.exe);
