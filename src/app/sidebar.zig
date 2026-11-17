@@ -7,6 +7,7 @@ const fmt = core.fmt;
 const state = @import("state.zig");
 const theme = @import("../ui/theme.zig");
 const tile = @import("../ui/tile.zig");
+const stats = @import("../pages/devices/stats.zig");
 const controls = @import("../ui/controls.zig");
 const app_icon = @import("../ui/icon.zig");
 
@@ -114,4 +115,21 @@ fn devices(c: *ui.Context, s: *State, k: theme.Colors) void {
         if (t.pressed) s.openFromSidebar(it.page, t.id);
         s.nav_ids.set(it.page, t.id);
     }
+    // A battery only where the machine has one.
+    const bt = smp.devices.battery;
+    if (bt.present) {
+        const t = tile.draw(c, k, .{
+            .key = "tile-battery",
+            .color = k.success,
+            .window = s.settings.span.seconds(),
+            .icon = "gauge.with.dots.needle.33percent", // nanoui has no battery icon
+            .title = "Battery",
+            .value = c.print("{d:.0}%", .{bt.percent}),
+            .detail = if (bt.seconds_left > 0) c.print("{s} · {s}", .{ stats.statusWord(bt), fmt.duration(&b[0], bt.seconds_left) }) else stats.statusWord(bt),
+            .history = &h.battery,
+            .max = 100,
+        }, s.page == .battery);
+        if (t.pressed) s.openFromSidebar(.battery, t.id);
+        s.nav_ids.set(.battery, t.id);
+    } else if (s.page == .battery) s.open(.cpu);
 }

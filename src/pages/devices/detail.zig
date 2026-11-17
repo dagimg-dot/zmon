@@ -1,9 +1,6 @@
 //! The large chart and the figures of the device the sidebar opened.
-const std = @import("std");
 const nanoui = @import("nanoui");
 const ui = nanoui.ui;
-const core = @import("zmon-core");
-const fmt = core.fmt;
 const app = @import("../../app/state.zig");
 const charts = @import("../../ui/charts.zig");
 const theme = @import("../../ui/theme.zig");
@@ -32,20 +29,17 @@ pub fn view(c: *ui.Context, s: *State, k: theme.Colors) void {
         .disk => {
             heading(c, k, "Disk", "reads solid, writes lighter");
             charts.area(c, &h.disk_read, .{ .height = 220, .floor = 256 * 1024, .window = span, .color = k.disk, .grid = k.separator, .second = &h.disk_write });
-            var b: [2][24]u8 = undefined;
-            const r = ui.div(c).row().wFull().gap(28);
-            defer r.end();
-            stats.stat(c, k, "Read", fmt.own(c.alloc(), fmt.rate(&b[0], s.sample.disk_read_bps)));
-            stats.stat(c, k, "Write", fmt.own(c.alloc(), fmt.rate(&b[1], s.sample.disk_write_bps)));
+            stats.disk(c, s, k);
         },
         .network => {
             heading(c, k, "Network", "download solid, upload lighter");
             charts.area(c, &h.net_in, .{ .height = 220, .floor = 64 * 1024, .window = span, .color = k.network, .grid = k.separator, .second = &h.net_out });
-            var b: [2][24]u8 = undefined;
-            const r = ui.div(c).row().wFull().gap(28);
-            defer r.end();
-            stats.stat(c, k, "Download", fmt.own(c.alloc(), fmt.rate(&b[0], s.sample.net_in_bps)));
-            stats.stat(c, k, "Upload", fmt.own(c.alloc(), fmt.rate(&b[1], s.sample.net_out_bps)));
+            stats.network(c, s, k);
+        },
+        .battery => {
+            heading(c, k, "Battery", stats.statusWord(s.sample.devices.battery));
+            charts.area(c, &h.battery, .{ .height = 220, .max = 100, .window = span, .color = k.success, .grid = k.separator });
+            stats.battery(c, s, k);
         },
     }
 }

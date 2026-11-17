@@ -54,7 +54,7 @@ pub fn view(s: *State, c: *ui.Context) void {
             switch (s.page) {
                 .apps => apps_page.page(c, s, k),
                 .processes => processes.page(c, s, k),
-                .cpu, .memory, .disk, .network => devices.page(c, s, k),
+                .cpu, .memory, .disk, .network, .battery => devices.page(c, s, k),
                 .settings => settings_page.page(c, s, k),
             }
         }

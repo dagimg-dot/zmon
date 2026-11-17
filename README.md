@@ -6,7 +6,12 @@ A system monitor for Linux, written in Zig and drawn natively by [nanoui](https:
 
 - **Apps:** the apps you opened, with their launcher icons and the helpers they started folded in, with CPU, memory, disk and threads. Sort by any column, open an app to see its processes, end a task with a confirmation.
 - **Processes:** every process on the machine, one line each with its PID and the icon of the app it belongs to. Search by name or PID, sort by any column, end one process.
-- **Devices:** a sidebar tile for the CPU, memory, disk and network with its live value and the last minute as a chart, opening a page with the history drawn large, the per-core load, load averages and uptime.
+- **Devices:** a sidebar tile for the CPU, memory, disk, network and (where there is one) battery, with its live value and a chart of the last minute, five minutes or hour. Each opens a page:
+  - CPU: each core's load and clock speed, the machine's temperatures and how often tasks waited.
+  - Memory: how it is split between apps and cache, and swap with its history.
+  - Disk: each disk's rates and how busy it is, and the free space on each filesystem.
+  - Network: each interface's rates, address and link speed.
+  - Battery: charge, power drawn and time left.
 - **Themes:** 34 to choose from, Graphite Dark and Light by default and 32 ported from vicinae (Catppuccin, Nord, Gruvbox, Rosé Pine, Tokyo Night and more), one for dark and one for light, following the desktop or fixed. Your own go in `~/.local/share/zmon/themes/`; see `THEMES.md`.
 - **Settings:** appearance and the theme gallery, coloured or plain graphs, one or five minutes of history, the system's own tasks shown or hidden, and whether End task asks first. Saved in `~/.config/zmon/settings.toml`.
 

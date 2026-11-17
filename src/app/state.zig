@@ -11,7 +11,7 @@ const system = @import("zmon-system");
 const apps = system.apps;
 
 /// The page shown: the apps, every process, one device's page, or Settings.
-pub const Page = enum { apps, processes, cpu, memory, disk, network, settings };
+pub const Page = enum { apps, processes, cpu, memory, disk, network, battery, settings };
 pub const Sort = enum { name, user, pid, cpu, memory, disk };
 
 /// How a list is sorted.

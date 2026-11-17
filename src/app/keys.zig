@@ -122,8 +122,13 @@ fn list(c: *ui.Context, s: *State, by_pointer: bool, in_search: bool) void {
 fn cycle(s: *State, by: i8) void {
     const pages = std.enums.values(Page);
     const n: i8 = @intCast(pages.len);
-    const at: i8 = @intCast(@backingInt(s.page));
-    s.open(pages[@intCast(@mod(at + by, n))]);
+    var at: i8 = @intCast(@backingInt(s.page));
+    // Battery only where there is one.
+    while (true) {
+        at = @mod(at + by, n);
+        if (pages[@intCast(at)] != .battery or s.sample.devices.battery.present) break;
+    }
+    s.open(pages[@intCast(at)]);
 }
 
 /// Ctrl and a character (Command on the Mac).
