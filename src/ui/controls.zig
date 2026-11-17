@@ -18,8 +18,13 @@ pub fn press(c: *ui.Context, d: ui.Div, desc: ui.access.Describe) bool {
 /// The search field Apps and Processes share; true when its text changed.
 /// Placeholder and width are the same on both, so they read as one search.
 pub fn search(c: *ui.Context, buf: *ui.TextBuffer) bool {
+    return searchSized(c, buf, 220);
+}
+
+/// The same field, narrower when the toolbar is short of room.
+pub fn searchSized(c: *ui.Context, buf: *ui.TextBuffer, width: f32) bool {
     ui.key(c, "search");
-    return ui.textField(c, buf, .{ .placeholder = "Search", .width = .{ .px = 220 }, .size = 13 }).changed;
+    return ui.textField(c, buf, .{ .placeholder = "Search", .width = .{ .px = width }, .size = 13 }).changed;
 }
 
 pub const ButtonOptions = struct {
@@ -29,12 +34,17 @@ pub const ButtonOptions = struct {
     danger: bool = false,
     /// What a screen reader adds after the label ("Asks first").
     hint: []const u8 = "",
+    /// Only the icon shows; the label is its tooltip and its name for a
+    /// screen reader.
+    compact: bool = false,
 };
 
 /// An outlined button; true when it was pressed.
 pub fn button(c: *ui.Context, k: theme.Colors, label: []const u8, opts: ButtonOptions) bool {
     ui.key(c, label);
-    const b = ui.div(c).row().h(30).px(12).gap(6).itemsCenter().rounded(8).border(if (opts.danger and !opts.disabled) k.danger else k.border).control();
+    const compact = opts.compact and opts.icon.len > 0;
+    var b = ui.div(c).row().h(30).px(if (compact) 9 else 12).gap(6).itemsCenter().rounded(8).border(if (opts.danger and !opts.disabled) k.danger else k.border).control();
+    if (compact) b = b.tooltip(label, .{});
     defer b.end();
     const ink = if (opts.disabled) k.tertiary else if (opts.danger) k.danger else k.text;
     if (opts.disabled) {
@@ -44,7 +54,7 @@ pub fn button(c: *ui.Context, k: theme.Colors, label: []const u8, opts: ButtonOp
     }
     const pressed = !opts.disabled and press(c, b, .{ .label = label, .hint = opts.hint });
     if (opts.icon.len > 0) ui.icon(c, opts.icon, .{ .size = 12, .frame = 14, .color = ink });
-    ui.text(c, label, .{ .size = 12.5, .weight = .medium, .color = ink });
+    if (!compact) ui.text(c, label, .{ .size = 12.5, .weight = .medium, .color = ink });
     return pressed;
 }
 

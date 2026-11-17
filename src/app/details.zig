@@ -13,11 +13,60 @@ const controls = @import("../ui/controls.zig");
 const app_icon = @import("../ui/app_icon.zig");
 
 const State = app.State;
-pub const width = 320;
+/// The pane's width when it hasn't been dragged, and the least and the
+/// room it must leave the list.
+pub const default_width = 320;
+pub const min_width = 260;
+pub const list_keeps = 420;
+
+/// The widest the pane may be in a window `window_w` wide beside a sidebar
+/// `sidebar_w` wide.
+pub fn maxWidth(window_w: f32, sidebar_w: f32) f32 {
+    return @max(min_width, window_w - sidebar_w - list_keeps);
+}
+
+/// The edge between the list and the pane: drag it to resize the pane,
+/// double-click it for the default width. A screen reader steps it.
+pub fn edge(c: *ui.Context, s: *State, k: theme.Colors, sidebar_w: f32) void {
+    ui.key(c, "details-edge");
+    const d = ui.div(c).row().w(7).hFull().justifyCenter();
+    defer d.end();
+    c.adjustable(d.index, .{ .role = .splitter, .label = "Details width", .value = c.print("{d} points", .{s.settings.details_width}) });
+    const it = c.interact(d.index, .{});
+    const dragging = s.edge_drag != null;
+    if (it.hovered or dragging) c.cursor = .resize_left_right;
+    const most = maxWidth(c.size.w, sidebar_w);
+    if (it.double_clicked) {
+        s.settings.details_width = default_width;
+        s.edge_drag = null;
+        s.save();
+    } else if (it.pressed and !dragging) {
+        s.edge_drag = .{ .x = c.input.mouse.x, .width = @floatFromInt(s.settings.details_width) };
+    } else if (s.edge_drag) |drag| {
+        if (!c.input.down) {
+            s.edge_drag = null;
+            s.save(); // once, when let go
+        } else {
+            // The pane is on the right: moving left widens it.
+            const w = std.math.clamp(drag.width - (c.input.mouse.x - drag.x), min_width, most);
+            s.settings.details_width = @intFromFloat(w);
+            c.changed = true;
+        }
+    }
+    if (it.a11y_step != 0) {
+        const w = std.math.clamp(@as(f32, @floatFromInt(s.settings.details_width)) - @as(f32, @floatFromInt(it.a11y_step)) * 20, min_width, most);
+        s.settings.details_width = @intFromFloat(w);
+        s.save();
+    }
+    _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = if (it.hovered or dragging) k.accent else k.separator }, .none, null);
+}
 
 pub fn pane(c: *ui.Context, s: *State, k: theme.Colors) void {
     ui.key(c, "details-pane");
-    const box = ui.div(c).column().w(width).hFull().bg(k.panel).scrollY();
+    // A window made narrower since the last drag still leaves the list room.
+    const sidebar_w: f32 = if (c.size.w < @import("sidebar.zig").compact_below) 76 else 236;
+    const w = @min(@as(f32, @floatFromInt(s.settings.details_width)), maxWidth(c.size.w, sidebar_w));
+    const box = ui.div(c).column().w(w).hFull().bg(k.panel).scrollY();
     defer box.end();
     const col = ui.div(c).column().wFull().px(18).py(16).gap(14);
     defer col.end();

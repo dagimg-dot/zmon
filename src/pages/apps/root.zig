@@ -11,6 +11,7 @@ const theme = @import("../../ui/theme.zig");
 const table = @import("../../ui/table.zig");
 const app_icon = @import("../../ui/app_icon.zig");
 const controls = @import("../../ui/controls.zig");
+const toolbar = @import("../toolbar.zig");
 
 const State = app.State;
 
@@ -25,7 +26,7 @@ const Columns = @TypeOf(all_columns);
 const keys = [_]app.Sort{ .name, .cpu, .memory, .disk, .name };
 
 pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
-    toolbar(c, s, k);
+    toolbar.draw(c, s, k, "Apps", c.print("{d} open", .{s.appCount()}));
     var columns = all_columns;
     table.fit(&columns, table.lastWidth(c, s.list_id));
     const sorted = std.mem.indexOfScalar(app.Sort, keys[0..4], s.app_order.key) orelse 0;
@@ -53,23 +54,6 @@ pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
         s.toggle(root);
         c.changed = true;
     }
-}
-
-fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const bar = ui.div(c).row().wFull().h(56).px(table.pad + 4).itemsCenter().gap(12);
-    defer bar.end();
-    ui.text(c, "Apps", .{ .size = 18, .weight = .bold, .color = k.text });
-    const n = s.appCount();
-    {
-        // The count gives way first when the toolbar is short of room.
-        const count = ui.div(c).row().grow().w(0).clip();
-        defer count.end();
-        ui.text(c, c.print("{d} open", .{n}), .{ .size = 12.5, .color = k.secondary });
-    }
-    if (controls.search(c, &s.search)) s.rebuild();
-    if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P" })) s.togglePause();
-    if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I" })) s.details_open = !s.details_open;
-    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }
 
 fn groupRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, g: apps.Group, i: usize) void {

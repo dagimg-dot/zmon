@@ -71,6 +71,8 @@ pub const State = struct {
     paused: bool = false,
     /// The Background section of Apps is open.
     background_open: bool = false,
+    /// Where a drag of the details pane's edge started: the pointer and the width.
+    edge_drag: ?struct { x: f32, width: f32 } = null,
     /// The details pane is open beside the list.
     details_open: bool = false,
     /// Samples the machine, on its own thread once `startSampling` runs.

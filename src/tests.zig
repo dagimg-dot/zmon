@@ -1035,3 +1035,31 @@ test "Ctrl+Shift+P pauses every figure and resumes them" {
     t.advance(1.5);
     try std.testing.expect(state.sample.samples > held);
 }
+
+test "dragging the details pane's edge resizes it, within limits, and a double-click resets it" {
+    var state: app_state.State = .init(std.testing.allocator, std.testing.io, null);
+    defer state.deinit();
+    state.dark = false;
+    const f = try Fixture.init(&state);
+    defer f.deinit();
+    state.page = .processes;
+    state.details_open = true;
+    var t: ui.Tester = undefined;
+    try tester(&t, &state); // 1180 wide, the full sidebar 236
+    defer t.deinit();
+    t.settle(0.2);
+    const edge_x: f32 = 1180 - 320 - 4; // the middle of the 7-point edge
+    t.drag(edge_x, 400, edge_x - 100, 400); // left: wider
+    t.settle(0.1);
+    try std.testing.expectApproxEqAbs(@as(f32, 420), @as(f32, @floatFromInt(state.settings.details_width)), 2);
+    t.drag(edge_x - 100, 400, 20, 400); // far left: the list keeps 420
+    t.settle(0.1);
+    try std.testing.expectEqual(@as(u16, 1180 - 236 - 420), state.settings.details_width);
+    const at: f32 = 1180 - @as(f32, @floatFromInt(state.settings.details_width)) - 4;
+    t.drag(at, 400, 1170, 400); // far right: no narrower than 260
+    t.settle(0.1);
+    try std.testing.expectEqual(@as(u16, 260), state.settings.details_width);
+    t.doubleClick(1180 - 260 - 4, 400);
+    t.settle(0.1);
+    try std.testing.expectEqual(@as(u16, 320), state.settings.details_width);
+}

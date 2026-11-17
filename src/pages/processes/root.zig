@@ -12,6 +12,7 @@ const theme = @import("../../ui/theme.zig");
 const table = @import("../../ui/table.zig");
 const app_icon = @import("../../ui/app_icon.zig");
 const controls = @import("../../ui/controls.zig");
+const toolbar = @import("../toolbar.zig");
 
 const State = app.State;
 
@@ -28,7 +29,7 @@ const Columns = @TypeOf(all_columns);
 const keys = [_]app.Sort{ .name, .user, .pid, .cpu, .memory, .disk, .name };
 
 pub fn page(c: *ui.Context, s: *State, k: theme.Colors) void {
-    toolbar(c, s, k);
+    toolbar.draw(c, s, k, "Processes", c.print("{d} processes, {d} threads", .{ s.sample.process_count, s.sample.threads }));
     var columns = all_columns;
     table.fit(&columns, table.lastWidth(c, s.list_id));
     const sorted = std.mem.indexOfScalar(app.Sort, keys[0..6], s.proc_order.key) orelse 0;
@@ -85,22 +86,6 @@ fn portMessage(c: *ui.Context, s: *State, port: u16) []const u8 {
         return c.print("Port {d} is held by a process of {s}. Which one can only be seen with root.", .{ port, s.userName(&b, uid) });
     }
     return c.print("Nothing holds port {d}.", .{port});
-}
-
-fn toolbar(c: *ui.Context, s: *State, k: theme.Colors) void {
-    const bar = ui.div(c).row().wFull().h(56).px(table.pad + 4).itemsCenter().gap(12);
-    defer bar.end();
-    ui.text(c, "Processes", .{ .size = 18, .weight = .bold, .color = k.text });
-    {
-        // The count gives way first when the toolbar is short of room.
-        const count = ui.div(c).row().grow().w(0).clip();
-        defer count.end();
-        ui.text(c, c.print("{d} processes, {d} threads", .{ s.sample.process_count, s.sample.threads }), .{ .size = 12.5, .color = k.secondary });
-    }
-    if (controls.search(c, &s.search)) s.rebuild();
-    if (controls.button(c, k, if (s.paused) "Resume" else "Pause", .{ .icon = if (s.paused) "play.fill" else "pause.fill", .hint = "Ctrl+Shift+P" })) s.togglePause();
-    if (controls.button(c, k, "Details", .{ .icon = "info.circle", .hint = "Ctrl+I" })) s.details_open = !s.details_open;
-    if (controls.button(c, k, "End task", .{ .disabled = s.target() == null, .hint = "Delete" })) s.askEndTask(false);
 }
 
 fn procRow(c: *ui.Context, s: *State, k: theme.Colors, columns: *const Columns, index: u32, i: usize) void {

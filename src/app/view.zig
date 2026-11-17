@@ -59,7 +59,7 @@ pub fn view(s: *State, c: *ui.Context) void {
             }
         }
         if (s.details_open and s.onList()) {
-            _ = c.leaf(.{ .width = .{ .px = 1 }, .height = .fill, .background = k.separator }, .none, null);
+            details.edge(c, s, k, if (c.size.w < sidebar.compact_below) 76 else 236);
             details.pane(c, s, k);
         }
         if (s.focus_content) {
